@@ -53,7 +53,7 @@ ros2 launch tm_gazebo gazebo.launch.py world:=/path/to/your.sdf
 | `static_transform_publisher` (lidar) | `base_link → lidar_link` (z=0.09m) |
 | `static_transform_publisher` (camera) | `base_link → camera_link` (x=0.25m, z=0.10m) |
 | `static_transform_publisher` (optical) | `camera_link → camera_color_optical_frame` |
-| `rviz2` | `rviz/gazebo.rviz` 설정으로 시각화 |
+| `rviz2` | `rviz2/gazebo.rviz` 설정으로 시각화 |
 | `rqt_robot_steering` | 수동 cmd_vel 제어 GUI |
 
 ## 브리지 토픽

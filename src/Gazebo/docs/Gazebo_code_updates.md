@@ -1,9 +1,9 @@
 # Gazebo Code Updates
 
-## 2026-03-13 / 수정 - launch/*.launch.py, rviz/gazebo.rviz
+## 2026-03-13 / 수정 - launch/*.launch.py, rviz2/gazebo.rviz
 
 - launch/gazebo.launch.py, launch/gazebo_no_odom.launch.py: `pkg_src` 경로 수정 (`T-Robot_nav_ros2_ws` → `Study/ros2_3dslam_ws`)
-- rviz/gazebo.rviz: `LidarPointCloud` (`/scan/points`) `Enabled: false` → `true` (3D 포인트 클라우드 기본 표시)
+- rviz2/gazebo.rviz: `LidarPointCloud` (`/scan/points`) `Enabled: false` → `true` (3D 포인트 클라우드 기본 표시)
 
 ---
 

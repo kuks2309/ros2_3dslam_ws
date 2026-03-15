@@ -11,7 +11,7 @@ def generate_launch_description():
     pkg_src = os.path.join(os.path.expanduser('~'), 'Study', 'ros2_3dslam_ws', 'src', 'Gazebo')
     world_file = os.path.join(pkg_src, 'worlds', 'my_world.sdf')
     models_path = os.path.join(pkg_src, 'models')
-    rviz_config = os.path.join(pkg_src, 'rviz', 'gazebo.rviz')
+    rviz_config = os.path.join(pkg_src, 'rviz2', 'gazebo.rviz')
 
     # Launch arguments
     world_arg = DeclareLaunchArgument(

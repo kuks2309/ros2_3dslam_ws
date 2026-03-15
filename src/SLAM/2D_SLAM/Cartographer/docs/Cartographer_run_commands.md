@@ -67,7 +67,7 @@ ros2 service call /write_state cartographer_ros_msgs/srv/WriteState \
 |------|------|
 | `cartographer_node` | SLAM 메인 노드 (서브맵 생성 + 루프 클로저) |
 | `cartographer_occupancy_grid_node` | 점유 격자 지도 생성 (해상도 0.05m) |
-| `rviz2` | `rviz/cartographer.rviz` 시각화 |
+| `rviz2` | `rviz2/cartographer.rviz` 시각화 |
 
 ## 설정 파일
 
