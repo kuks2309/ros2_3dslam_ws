@@ -18,7 +18,7 @@ def generate_launch_description():
     share_dir = get_package_share_directory('livox_lio_sam')
     src_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
     parameter_file = LaunchConfiguration('params_file')
-    rviz_config_file = os.path.join(src_dir, 'config', 'rviz2.rviz')
+    rviz_config_file = os.path.join(src_dir, 'rviz2', 'lio_sam.rviz')
 
     params_declare = DeclareLaunchArgument(
         'params_file',

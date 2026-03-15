@@ -28,7 +28,7 @@ def generate_launch_description():
     parameter_file = LaunchConfiguration('params_file')
     xacro_path = os.path.join(share_dir, 'config', 'robot.urdf.xacro')
     # RViz config - src 폴더에서 직접 로드 (수정/저장 편의)
-    rviz_config_file = os.path.join(src_dir, 'config', 'rviz2.rviz')
+    rviz_config_file = os.path.join(src_dir, 'rviz2', 'lio_sam.rviz')
 
     params_declare = DeclareLaunchArgument(
         'params_file',
