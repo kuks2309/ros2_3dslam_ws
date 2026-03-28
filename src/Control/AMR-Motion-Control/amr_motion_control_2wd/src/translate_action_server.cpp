@@ -43,7 +43,7 @@ TranslateActionServer::TranslateActionServer(rclcpp::Node::SharedPtr node)
   pd_kd_                  = safeParam(node_, "pd_heading_kd",           0.1);
   omega_smoother_alpha_   = safeParam(node_, "omega_smoother_alpha",    0.4);
   max_omega_              = safeParam(node_, "max_omega_rad_s",         1.5);
-  arrive_dist_            = safeParam(node_, "arrive_distance_m",       0.05);
+  arrive_dist_            = safeParam(node_, "translate_goal_reach_threshold", 0.05);
   lateral_recover_dist_   = safeParam(node_, "lateral_recover_dist_m",  0.8);
   watchdog_timeout_sec_   = safeParam(node_, "watchdog_timeout_sec",    2.0);
   watchdog_jump_threshold_= safeParam(node_, "watchdog_jump_threshold", 0.5);
@@ -63,8 +63,8 @@ TranslateActionServer::TranslateActionServer(rclcpp::Node::SharedPtr node)
   auto imu_qos  = rclcpp::SensorDataQoS();
   auto pose_qos = rclcpp::SensorDataQoS();
 
-  std::string imu_topic  = safeParam(node_, "imu_topic",  std::string("/imu/data"));
-  std::string pose_topic = safeParam(node_, "pose_topic", std::string("/rtabmap/odom"));
+  std::string imu_topic  = safeParam(node_, "imu_topic",          std::string("/imu/data"));
+  std::string pose_topic = safeParam(node_, "translate_pose_topic", std::string("/rtabmap/odom"));
 
   imu_sub_ = node_->create_subscription<sensor_msgs::msg::Imu>(
     imu_topic, imu_qos,
@@ -202,7 +202,9 @@ void TranslateActionServer::execute(const std::shared_ptr<GoalHandle> goal_handl
     result->status           = -2;  // invalid_param
     result->actual_distance  = 0.0;
     result->elapsed_time     = 0.0;
-    goal_handle->abort(result);
+    try { goal_handle->abort(result); } catch (const std::exception & e) {
+      RCLCPP_WARN(node_->get_logger(), "TranslateActionServer: abort failed (stale handle): %s", e.what());
+    }
     return;
   }
 
@@ -255,7 +257,9 @@ void TranslateActionServer::execute(const std::shared_ptr<GoalHandle> goal_handl
         result->status      = -3;  // timeout
         result->elapsed_time =
           (node_->now() - start_time).seconds();
-        goal_handle->abort(result);
+        try { goal_handle->abort(result); } catch (const std::exception & e) {
+          RCLCPP_WARN(node_->get_logger(), "TranslateActionServer: abort failed (stale handle): %s", e.what());
+        }
         return;
       }
     }
@@ -271,10 +275,18 @@ void TranslateActionServer::execute(const std::shared_ptr<GoalHandle> goal_handl
   double traveled_dist = 0.0;
   double rob_x = 0.0, rob_y = 0.0, rob_yaw = 0.0;
 
-  // Snapshot initial robot position from watchdog
-  rob_x   = watchdog_->x();
-  rob_y   = watchdog_->y();
-  rob_yaw = watchdog_->yaw();
+  // Snapshot initial robot position from TF2 (map frame)
+  if (!lookupRobotPose(rob_x, rob_y, rob_yaw)) {
+    rob_x   = watchdog_->x();
+    rob_y   = watchdog_->y();
+    rob_yaw = watchdog_->yaw();
+  }
+  RCLCPP_INFO(node_->get_logger(),
+    "TranslateActionServer: initial pose=(%.3f, %.3f, %.3f rad) "
+    "path=(%.3f,%.3f)->(%.3f,%.3f) len=%.3f m arrive_dist=%.3f m",
+    rob_x, rob_y, rob_yaw,
+    path_start_x_, path_start_y_, path_end_x_, path_end_y_,
+    target_distance_, arrive_dist_);
 
   // Reference origin for distance projection
   double ref_x = path_start_x_;
@@ -291,7 +303,9 @@ void TranslateActionServer::execute(const std::shared_ptr<GoalHandle> goal_handl
       result->status          = -1;  // cancelled
       result->actual_distance = traveled_dist;
       result->elapsed_time    = (node_->now() - start_time).seconds();
-      goal_handle->canceled(result);
+      try { goal_handle->canceled(result); } catch (const std::exception & e) {
+        RCLCPP_WARN(node_->get_logger(), "TranslateActionServer: canceled failed (stale handle): %s", e.what());
+      }
       RCLCPP_INFO(node_->get_logger(), "TranslateActionServer: cancelled");
       return;
     }
@@ -333,7 +347,9 @@ void TranslateActionServer::execute(const std::shared_ptr<GoalHandle> goal_handl
       result->status          = -3;  // timeout
       result->actual_distance = traveled_dist;
       result->elapsed_time    = (node_->now() - start_time).seconds();
-      goal_handle->abort(result);
+      try { goal_handle->abort(result); } catch (const std::exception & e) {
+        RCLCPP_WARN(node_->get_logger(), "TranslateActionServer: abort failed (stale handle): %s", e.what());
+      }
       RCLCPP_ERROR(node_->get_logger(),
         "TranslateActionServer: localization watchdog triggered, aborting");
       return;
@@ -347,16 +363,21 @@ void TranslateActionServer::execute(const std::shared_ptr<GoalHandle> goal_handl
       result->status          = -4;  // safety_stop
       result->actual_distance = traveled_dist;
       result->elapsed_time    = (node_->now() - start_time).seconds();
-      goal_handle->abort(result);
+      try { goal_handle->abort(result); } catch (const std::exception & e) {
+        RCLCPP_WARN(node_->get_logger(), "TranslateActionServer: abort failed (stale handle): %s", e.what());
+      }
       RCLCPP_WARN(node_->get_logger(),
         "TranslateActionServer: safety stop triggered");
       return;
     }
 
-    // ── Get current robot pose
-    rob_x   = watchdog_->x();
-    rob_y   = watchdog_->y();
-    rob_yaw = watchdog_->yaw();
+    // ── Get current robot pose (TF2: map → base_footprint)
+    if (!lookupRobotPose(rob_x, rob_y, rob_yaw)) {
+      // Use watchdog fallback if TF lookup fails
+      rob_x   = watchdog_->x();
+      rob_y   = watchdog_->y();
+      rob_yaw = watchdog_->yaw();
+    }
 
     // ── Project onto path: distance along path from ref
     double dx_r = rob_x - ref_x;
@@ -381,7 +402,9 @@ void TranslateActionServer::execute(const std::shared_ptr<GoalHandle> goal_handl
       result->final_lateral_error  = e_lateral;
       result->final_heading_error  = e_head_deg;
       result->elapsed_time         = (node_->now() - start_time).seconds();
-      goal_handle->succeed(result);
+      try { goal_handle->succeed(result); } catch (const std::exception & e) {
+        RCLCPP_WARN(node_->get_logger(), "TranslateActionServer: succeed failed (stale handle): %s", e.what());
+      }
       RCLCPP_INFO(node_->get_logger(),
         "TranslateActionServer: arrived (dist=%.3f m, lat=%.3f m, t=%.2f s)",
         traveled_dist, e_lateral, result->elapsed_time);
@@ -396,7 +419,9 @@ void TranslateActionServer::execute(const std::shared_ptr<GoalHandle> goal_handl
       result->status          = -3;  // treat as timeout/fault
       result->actual_distance = traveled_dist;
       result->elapsed_time    = (node_->now() - start_time).seconds();
-      goal_handle->abort(result);
+      try { goal_handle->abort(result); } catch (const std::exception & e) {
+        RCLCPP_WARN(node_->get_logger(), "TranslateActionServer: abort failed (stale handle): %s", e.what());
+      }
       RCLCPP_ERROR(node_->get_logger(),
         "TranslateActionServer: lateral error %.3f m > %.3f m limit, aborting",
         e_lateral, lateral_recover_dist_);
@@ -405,9 +430,19 @@ void TranslateActionServer::execute(const std::shared_ptr<GoalHandle> goal_handl
 
     // ── Speed profile
     double profile_pos = std::min(traveled_dist, end_dist);
-    // If endpoint was updated, rebuild remaining profile for getSpeed()
     auto   profile_out = profile.getSpeed(profile_pos);
     double vx_des      = sign_v * profile_out.speed;
+
+    // Minimum start speed to overcome static friction / zero-speed deadlock
+    constexpr double kMinVx = 0.02;  // m/s
+    if (profile_out.phase != amr_motion_control::ProfilePhase::DONE &&
+        std::abs(vx_des) < kMinVx && remaining > arrive_dist_) {
+      vx_des = sign_v * kMinVx;
+    }
+
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *node_->get_clock(), 500,
+      "TranslateActionServer: rob=(%.3f,%.3f,%.3fdeg) traveled=%.3f remaining=%.3f vx_des=%.3f e_lat=%.3f",
+      rob_x, rob_y, rob_yaw * 180.0 / M_PI, traveled_dist, remaining, vx_des, e_lateral);
 
     // Apply safety speed limit
     double spd_limit = safety_speed_limit_.load();
