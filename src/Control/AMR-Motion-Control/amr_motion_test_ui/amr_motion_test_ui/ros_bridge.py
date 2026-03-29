@@ -84,7 +84,10 @@ class RosBridge(QThread):
     def run(self):
         try:
             self._node = Node('amr_motion_test_gui')
-            self._node.declare_parameter('use_sim_time', True)
+            try:
+                self._node.declare_parameter('use_sim_time', True)
+            except Exception:
+                pass  # already declared via launch override
             self._running = True
 
             # TF2
