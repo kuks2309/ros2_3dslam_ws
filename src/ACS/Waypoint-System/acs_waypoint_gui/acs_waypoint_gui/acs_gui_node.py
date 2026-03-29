@@ -11,7 +11,7 @@ import os
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
-from rclpy.callback_group import MutuallyExclusiveCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 from waypoint_interfaces.action import WaypointMission
 from waypoint_interfaces.msg import Waypoint
@@ -40,7 +40,10 @@ class AcsGuiRosNode(Node):
 
     def __init__(self):
         super().__init__('acs_gui_node')
-        self.declare_parameter('use_sim_time', True)
+        try:
+            self.declare_parameter('use_sim_time', True)
+        except Exception:
+            pass  # already declared via launch override
 
         cb_group = MutuallyExclusiveCallbackGroup()
         self._action_client = ActionClient(
