@@ -51,6 +51,8 @@ def test_full_mapping_flow(node: Node) -> None:
     req.drive_mode = MapperCommand.Request.DRIVE_RIGHT_HAND
     future = cmd_client.call_async(req)
     rclpy.spin_until_future_complete(node, future, timeout_sec=5.0)
+    if not future.done():
+        raise RuntimeError("Service call timed out after 5 s (no response)")
     result = future.result()
     assert result is not None and result.success, \
         f"CMD_START_MAPPING failed: {result.message if result else 'no response'}"
@@ -90,16 +92,7 @@ def test_estop_transitions_to_idle(node: Node) -> None:
     if not cmd_client.wait_for_service(timeout_sec=10.0):
         raise RuntimeError("mapper/command service not available after 10 s")
 
-    # E-STOP 발행
-    req = MapperCommand.Request()
-    req.command = MapperCommand.Request.CMD_STOP
-    future = cmd_client.call_async(req)
-    rclpy.spin_until_future_complete(node, future, timeout_sec=5.0)
-    result = future.result()
-    assert result is not None and result.success, \
-        f"CMD_STOP failed: {result.message if result else 'no response'}"
-
-    # IDLE 상태 확인 (5 s)
+    # ① 먼저 구독 등록
     current_state: list[int] = []
 
     def on_status(msg: MapperStatus) -> None:
@@ -107,6 +100,20 @@ def test_estop_transitions_to_idle(node: Node) -> None:
         current_state.append(msg.state)
 
     sub = node.create_subscription(MapperStatus, 'mapper/status', on_status, 10)
+
+    # ② 그 다음 E-STOP 발행
+    req = MapperCommand.Request()
+    req.command = MapperCommand.Request.CMD_STOP
+    future = cmd_client.call_async(req)
+    rclpy.spin_until_future_complete(node, future, timeout_sec=5.0)
+    if not future.done():
+        node.destroy_subscription(sub)
+        raise RuntimeError("CMD_STOP service call timed out after 5 s")
+    result = future.result()
+    assert result is not None and result.success, \
+        f"CMD_STOP failed: {result.message if result else 'no response'}"
+
+    # IDLE 확인 (5 s)
     deadline = time.time() + 5.0
     while time.time() < deadline:
         rclpy.spin_once(node, timeout_sec=0.1)
@@ -115,7 +122,6 @@ def test_estop_transitions_to_idle(node: Node) -> None:
     assert current_state and current_state[-1] == MapperStatus.STATE_IDLE, \
         f"Expected IDLE after CMD_STOP, got: {current_state}"
     print("✅ E-STOP → IDLE confirmed")
-
     node.destroy_subscription(sub)
 
 
@@ -125,8 +131,8 @@ def test_estop_transitions_to_idle(node: Node) -> None:
 
 def test_pause_resume(node: Node) -> None:
     """
-    MAPPING_MANUAL 상태에서 CMD_PAUSE → PAUSED, CMD_RESUME → MAPPING_MANUAL 확인.
-    (mapper_orchestrator_node가 직접 테스트 가능한 상태에서만 유효)
+    IDLE 상태에서 CMD_PAUSE는 실패해야 함을 확인한다.
+    (MAPPING_MANUAL → PAUSED → RESUME 전이는 Gazebo 실행 환경에서 수동 테스트)
     """
     cmd_client = node.create_client(MapperCommand, 'mapper/command')
     if not cmd_client.wait_for_service(timeout_sec=10.0):
@@ -137,6 +143,8 @@ def test_pause_resume(node: Node) -> None:
     req.command = MapperCommand.Request.CMD_PAUSE
     future = cmd_client.call_async(req)
     rclpy.spin_until_future_complete(node, future, timeout_sec=5.0)
+    if not future.done():
+        raise RuntimeError("Service call timed out after 5 s (no response)")
     result = future.result()
     assert result is not None and not result.success, \
         "CMD_PAUSE from IDLE should fail but succeeded"
@@ -149,7 +157,6 @@ def test_pause_resume(node: Node) -> None:
 
 def main() -> None:
     rclpy.init()
-    node = rclpy.create_node('mapper_integration_test')
     failed = 0
 
     tests = [
@@ -162,6 +169,7 @@ def main() -> None:
         print(f"\n{'='*50}")
         print(f"Running: {name}")
         print('='*50)
+        node = rclpy.create_node('mapper_integration_test')
         try:
             fn(node)
             print(f"PASS: {name}")
@@ -170,8 +178,9 @@ def main() -> None:
             failed += 1
         except RuntimeError as e:
             print(f"SKIP: {name} — {e} (Gazebo not running?)", file=sys.stderr)
+        finally:
+            node.destroy_node()
 
-    node.destroy_node()
     rclpy.shutdown()
 
     if failed:
