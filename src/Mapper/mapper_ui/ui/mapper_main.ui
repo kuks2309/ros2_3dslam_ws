@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MapperMainWindow</class>
+ <widget class="QMainWindow" name="MapperMainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>480</width><height>720</height></rect>
+  </property>
+  <property name="windowTitle"><string>SLAM Mapper</string></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout">
+
+    <item>
+     <widget class="QGroupBox" name="grp_status">
+      <property name="title"><string>상태</string></property>
+      <layout class="QVBoxLayout">
+       <item>
+        <widget class="QLabel" name="lbl_state">
+         <property name="text"><string>IDLE</string></property>
+         <property name="alignment"><set>AlignCenter</set></property>
+         <property name="styleSheet"><string>background-color: #888888; color: white; font-weight: bold; border-radius: 4px; padding: 4px;</string></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="lbl_heading_error">
+         <property name="text"><string>헤딩 오차: 0.00°</string></property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout">
+         <item>
+          <widget class="QLabel" name="lbl_coverage">
+           <property name="text"><string>커버리지</string></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QProgressBar" name="progress_coverage">
+           <property name="value"><number>0</number></property>
+           <property name="maximum"><number>100</number></property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+    </item>
+
+    <item>
+     <widget class="QGroupBox" name="grp_config">
+      <property name="title"><string>설정</string></property>
+      <layout class="QFormLayout">
+       <item row="0" column="0">
+        <widget class="QLabel" name="lbl_slam_mode">
+         <property name="text"><string>SLAM 모드</string></property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QComboBox" name="combo_slam_mode">
+         <item><property name="text"><string>2D</string></property></item>
+         <item><property name="text"><string>3D</string></property></item>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="lbl_drive_mode">
+         <property name="text"><string>탐색 모드</string></property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QComboBox" name="combo_drive_mode">
+         <item><property name="text"><string>수동</string></property></item>
+         <item><property name="text"><string>우수법</string></property></item>
+         <item><property name="text"><string>좌수법</string></property></item>
+         <item><property name="text"><string>자동</string></property></item>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+
+    <item>
+     <widget class="QPushButton" name="btn_estop">
+      <property name="text"><string>■ 긴급 정지 (E-STOP)</string></property>
+      <property name="styleSheet"><string>background-color: #F44336; color: white; font-size: 14pt; font-weight: bold; min-height: 40px;</string></property>
+     </widget>
+    </item>
+
+    <item>
+     <widget class="QGroupBox" name="grp_control">
+      <property name="title"><string>제어</string></property>
+      <layout class="QHBoxLayout">
+       <item>
+        <widget class="QPushButton" name="btn_start">
+         <property name="text"><string>매핑 시작</string></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btn_pause">
+         <property name="text"><string>일시정지</string></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btn_resume">
+         <property name="text"><string>재개</string></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btn_stop">
+         <property name="text"><string>중지</string></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btn_explore">
+         <property name="text"><string>탐색 시작</string></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+
+    <item>
+     <widget class="QGroupBox" name="grp_manual">
+      <property name="title"><string>수동 제어</string></property>
+      <layout class="QGridLayout">
+       <item row="0" column="1">
+        <widget class="QPushButton" name="btn_forward">
+         <property name="text"><string>↑ 전진</string></property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QPushButton" name="btn_left">
+         <property name="text"><string>← 좌회전</string></property>
+        </widget>
+       </item>
+       <item row="1" column="2">
+        <widget class="QPushButton" name="btn_right">
+         <property name="text"><string>→ 우회전</string></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+
+    <item>
+     <widget class="QGroupBox" name="grp_log">
+      <property name="title"><string>로그</string></property>
+      <layout class="QVBoxLayout">
+       <item>
+        <widget class="QTextEdit" name="txt_log">
+         <property name="readOnly"><bool>true</bool></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+
+   </layout>
+  </widget>
+ </widget>
+</ui>
