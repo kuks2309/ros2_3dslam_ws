@@ -1,0 +1,11 @@
+uint8   MODE_RIGHT_HAND = 0
+uint8   MODE_LEFT_HAND  = 1
+uint8   MODE_AUTO       = 2
+uint8   mode
+float32 min_coverage_to_stop
+---
+float32 coverage_percent
+int8    status
+---
+geometry_msgs/Point current_target
+float32 coverage_percent
