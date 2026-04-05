@@ -11,7 +11,7 @@ import os
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
-from rclpy.callback_group import MutuallyExclusiveCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 from waypoint_interfaces.action import WaypointMission
 from waypoint_interfaces.msg import Waypoint
@@ -40,7 +40,10 @@ class AcsGuiRosNode(Node):
 
     def __init__(self):
         super().__init__('acs_gui_node')
-        self.declare_parameter('use_sim_time', True)
+        try:
+            self.declare_parameter('use_sim_time', True)
+        except Exception:
+            pass  # already declared via launch override
 
         cb_group = MutuallyExclusiveCallbackGroup()
         self._action_client = ActionClient(
@@ -134,21 +137,9 @@ class AcsGuiDialog(QtWidgets.QDialog):
         self._table.setHorizontalHeaderLabels(_WP_COLUMNS)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._on_table_context_menu)
         layout.addWidget(self._table, 1)
-
-        # -- Table edit buttons
-        tbl_btn_lay = QtWidgets.QHBoxLayout()
-        btn_add = QtWidgets.QPushButton('Add Row')
-        btn_add.clicked.connect(self._on_add_row)
-        tbl_btn_lay.addWidget(btn_add)
-        btn_del = QtWidgets.QPushButton('Delete Row')
-        btn_del.clicked.connect(self._on_del_row)
-        tbl_btn_lay.addWidget(btn_del)
-        btn_insert_pos = QtWidgets.QPushButton('Insert Pos')
-        btn_insert_pos.clicked.connect(self._on_insert_pos)
-        tbl_btn_lay.addWidget(btn_insert_pos)
-        tbl_btn_lay.addStretch()
-        layout.addLayout(tbl_btn_lay)
 
         # -- Parameters
         param_group = QtWidgets.QGroupBox('Parameters')
@@ -320,6 +311,25 @@ class AcsGuiDialog(QtWidgets.QDialog):
         wp_id = self._table.rowCount()
         self._add_table_row(wp_id, 'AMR', x, y, yaw_deg)
 
+    def _on_table_context_menu(self, pos):
+        menu = QtWidgets.QMenu(self)
+        row = self._table.rowAt(pos.y())
+
+        act_add = menu.addAction('Add Row')
+        act_insert_pos = menu.addAction('Insert Current Pos')
+        act_del = menu.addAction('Delete Row')
+        act_del.setEnabled(row >= 0)
+
+        action = menu.exec_(self._table.viewport().mapToGlobal(pos))
+        if action == act_add:
+            self._on_add_row()
+        elif action == act_insert_pos:
+            self._on_insert_pos()
+        elif action == act_del:
+            if row >= 0:
+                self._table.selectRow(row)
+            self._on_del_row()
+
     def _get_cell(self, row, col) -> str:
         item = self._table.item(row, col)
         return item.text() if item else ''
@@ -453,6 +463,8 @@ class AcsGuiDialog(QtWidgets.QDialog):
                 phase = phase_names.get(fb.segment_phase, str(fb.segment_phase))
                 self._set_cell(row, 8, phase)
                 self._set_cell(row, 9, f'{fb.mission_elapsed_time:.1f}')
+                self._table.selectRow(row)
+                self._table.scrollToItem(self._table.item(row, 0))
             elif row_id < fb.current_waypoint_id:
                 if self._get_cell(row, 8) != 'DONE':
                     self._set_cell(row, 8, 'DONE')

@@ -1,0 +1,52 @@
+# ACS Drive Modes Showcase Job
+# Robot spawns at (0, 0) in Gazebo my_world (flat 100x100m)
+# Format: Type  X(m)  Y(m)  Yaw(deg)  Timeout(sec)  DriveMode  TurnRadius  Speed
+#
+# Purpose: Demonstrate each supported drive mode in a single mission.
+# Path: (0,0) -AUTO-> (1,0) -YAWCTRL-> (4,0) -AUTO-> (1.5,0) -SPIN-> -TRANSLATE-> (1.5,3) -AUTO-> (0,0)
+#
+# Drive Mode Reference:
+#   AUTO (0)      - Spin in place to face target, then translate straight
+#   TRANSLATE (1) - Direct straight translation without pre-spin
+#   SPIN (4)      - Spin-only in place to reach target heading (XY unchanged)
+#   YAWCTRL (5)   - Translate with continuous yaw correction during motion
+#
+# NOTE obstacle constraints (empirically verified):
+#   - Northward at X>=3 blocked at Y≈0.87 → use X=1.5 for northward legs
+#   - YAWCTRL westward at Y=3 overshoots into rear wall → use YAWCTRL eastward only
+#   - Eastward at Y=0 safe to X=5 (front wall at TF X=28m)
+
+# --- Step 1: AUTO mode ---
+# (0,0) -> (1,0), facing east (0 deg)
+# AUTO spins to face target direction, then translates straight.
+# Short setup leg to establish correct heading before YAWCTRL corridor.
+AMR    1.0   0.0    0     30.0    AUTO    0.0    0.3
+
+# --- Step 2: YAWCTRL mode ---
+# (1,0) -> (4,0), facing east (0 deg) — 3m corridor
+# Robot is already aligned east (0 deg) from step 1, so heading error ≈ 0.
+# YAWCTRL corrects small heading drifts during translation, keeping the robot
+# on the Y=0 line even with wheel slip. Safe corridor: east wall at TF X=28m.
+AMR    4.0   0.0    0     30.0    YAWCTRL    0.0    0.3
+
+# --- Step 3: AUTO mode ---
+# (4,0) -> (1.5,0), facing west (180 deg)
+# Return west to X=1.5, the confirmed-safe X for northward travel.
+AMR    1.5   0.0  180     30.0    AUTO    0.0    0.3
+
+# --- Step 4: SPIN mode ---
+# Rotate in place at (1.5,0) from 180 deg to 90 deg (face north)
+# Align heading before TRANSLATE northward. TRANSLATE has no pre-spin,
+# so the robot must already face the target direction before starting.
+AMR    1.5   0.0   90     15.0    SPIN    0.0    0.3
+
+# --- Step 5: TRANSLATE mode ---
+# (1.5,0) -> (1.5,3), facing north (90 deg) — 3m corridor
+# TRANSLATE drives toward target XY while holding specified yaw (90 deg).
+# No pre-spin (robot already aligned from step 4). X=1.5 northward confirmed safe to Y=3.
+AMR    1.5   3.0   90     60.0    TRANSLATE    0.0    0.3
+
+# --- Step 6: AUTO mode (return home) ---
+# (1.5,3) -> (0,0), facing south-west
+# AUTO spins to face origin then translates home diagonally.
+AMR    0.0   0.0  270     60.0    AUTO    0.0    0.3

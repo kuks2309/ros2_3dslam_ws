@@ -1,0 +1,25 @@
+# ACS Gazebo Large Loop Test Job
+# Robot spawns at (0, 0) in Gazebo my_world (flat area near spawn)
+# Format: Type  X(m)  Y(m)  Yaw(deg)  Timeout(sec)  DriveMode  TurnRadius  Speed
+#
+# Path: 1.5x3m CCW rectangle  (0,0) -> (1.5,0) -> (1.5,3) -> (0,3) -> (0,0)
+# Speed: 0.5 m/s (high-speed loop test), DriveMode: AUTO
+# Purpose: Verify motion control at higher speeds over a larger area
+# NOTE: Northward path at X>1.5 hits warehouse obstacle at TF Y≈0.87 (Gazebo Y≈3.51).
+#       job_test_gazebo passed at X=2 only due to lateral drift (weaved east around obstacle).
+#       Using X=1.5 for northward leg avoids the warehouse structure entirely.
+
+# Leg 1: move to (1.5,0), face east (0 deg)
+AMR    1.5   0.0    0     30.0    AUTO    0.0    0.5
+
+# Leg 2: move to (1.5,3), face north (90 deg)
+AMR    1.5   3.0   90     60.0    AUTO    0.0    0.5
+
+# Leg 3: move to (0,3), face west (180 deg)
+AMR    0.0   3.0  180     30.0    AUTO    0.0    0.5
+
+# Leg 4: return to origin (0,0), face south (270 deg)
+AMR    0.0   0.0  270     60.0    AUTO    0.0    0.5
+
+# Close loop: spin in place from 270 deg back to east (0 deg) — no translation needed
+AMR    0.0   0.0    0     15.0    SPIN    0.0    0.5

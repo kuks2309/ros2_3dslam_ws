@@ -1,6 +1,6 @@
 # AMRMotionPurePursuit — Path following via Pure Pursuit
-# Path is received on /pure_pursuit/path topic (nav_msgs/Path) before goal is sent
 # Goal
+nav_msgs/Path path               # waypoint path to follow (map frame)
 float64 max_linear_speed         # m/s (max 0.4 for Gazebo)
 float64 acceleration             # m/s²
 float64 lookahead_distance       # m

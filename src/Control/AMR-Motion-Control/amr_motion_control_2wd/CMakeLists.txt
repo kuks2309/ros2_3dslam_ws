@@ -11,6 +11,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(amr_interfaces REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2 REQUIRED)
@@ -33,13 +34,15 @@ add_executable(amr_motion_control_2wd_node
   src/turn_action_server.cpp
   src/yaw_control_action_server.cpp
   src/translate_action_server.cpp
-  src/translate_reverse_action_server.cpp)
+  src/translate_reverse_action_server.cpp
+  src/pure_pursuit_action_server.cpp
+  src/stanley_action_server.cpp)
 target_include_directories(amr_motion_control_2wd_node PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(amr_motion_control_2wd_node
   rclcpp rclcpp_action amr_interfaces
-  sensor_msgs std_msgs geometry_msgs nav_msgs
+  sensor_msgs std_msgs std_srvs geometry_msgs nav_msgs
   tf2 tf2_ros tf2_geometry_msgs)
 target_link_libraries(amr_motion_control_2wd_node motion_profile)
 target_compile_features(amr_motion_control_2wd_node PRIVATE cxx_std_17)

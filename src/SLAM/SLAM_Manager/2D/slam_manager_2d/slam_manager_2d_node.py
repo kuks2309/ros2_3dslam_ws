@@ -23,6 +23,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from nav_msgs.msg import Odometry
 from ament_index_python.packages import get_package_share_directory
 import math
+from mapper_interfaces.srv import SlamControl
 
 
 def get_workspace_path():
@@ -62,9 +63,9 @@ class ProcessTracker:
 class SlamManagerNode(Node):
     """ROS2 Node for SLAM Manager"""
 
-    def __init__(self, ui_window):
+    def __init__(self, ui_window=None):  # None 허용 → headless 모드
         super().__init__('slam_manager_2d_node')
-        self.ui = ui_window
+        self.ui = ui_window  # None이면 headless 모드
 
         # Dictionary to store running processes
         self.processes = {
@@ -157,6 +158,13 @@ class SlamManagerNode(Node):
             odom_qos
         )
 
+        # SlamControl service server
+        self._slam_control_srv = self.create_service(
+            SlamControl,
+            'slam_manager_2d/slam_control',
+            self._handle_slam_control
+        )
+
         self.get_logger().info('SLAM Manager 2D Node initialized')
 
     def set_use_sim_time(self, enabled: bool):
@@ -168,52 +176,64 @@ class SlamManagerNode(Node):
         except Exception as e:
             self.get_logger().warn(f'Failed to set use_sim_time: {e}')
 
+    def _log(self, msg: str):
+        """UI가 있으면 UI에, 없으면 ROS logger에 로그"""
+        if self.ui:
+            self.ui.log(msg)
+        else:
+            self.get_logger().info(msg)
+
     def slamtoolbox_odom_callback(self, msg):
         """Callback for SLAM Toolbox odometry"""
         self.slamtoolbox_x = msg.pose.pose.position.x
         self.slamtoolbox_y = msg.pose.pose.position.y
         self.slamtoolbox_yaw = quaternion_to_yaw(msg.pose.pose.orientation)
-        self.ui.update_slamtoolbox_position(
-            self.slamtoolbox_x, self.slamtoolbox_y, self.slamtoolbox_yaw)
+        if self.ui and hasattr(self.ui, 'update_slamtoolbox_position'):
+            self.ui.update_slamtoolbox_position(
+                self.slamtoolbox_x, self.slamtoolbox_y, self.slamtoolbox_yaw)
 
     def carto_odom_callback(self, msg):
         """Callback for Cartographer odometry"""
         self.carto_x = msg.pose.pose.position.x
         self.carto_y = msg.pose.pose.position.y
         self.carto_yaw = quaternion_to_yaw(msg.pose.pose.orientation)
-        self.ui.update_carto_position(
-            self.carto_x, self.carto_y, self.carto_yaw)
+        if self.ui and hasattr(self.ui, 'update_carto_position'):
+            self.ui.update_carto_position(
+                self.carto_x, self.carto_y, self.carto_yaw)
 
     def kslam_odom_callback(self, msg):
         """Callback for K-SLAM odometry"""
         self.kslam_x = msg.pose.pose.position.x
         self.kslam_y = msg.pose.pose.position.y
         self.kslam_yaw = quaternion_to_yaw(msg.pose.pose.orientation)
-        self.ui.update_kslam_position(
-            self.kslam_x, self.kslam_y, self.kslam_yaw)
+        if self.ui and hasattr(self.ui, 'update_kslam_position'):
+            self.ui.update_kslam_position(
+                self.kslam_x, self.kslam_y, self.kslam_yaw)
 
     def rtabmap2d_odom_callback(self, msg):
         """Callback for RTAB-Map 2D odometry"""
         self.rtabmap2d_x = msg.pose.pose.position.x
         self.rtabmap2d_y = msg.pose.pose.position.y
         self.rtabmap2d_yaw = quaternion_to_yaw(msg.pose.pose.orientation)
-        self.ui.update_rtabmap2d_position(
-            self.rtabmap2d_x, self.rtabmap2d_y, self.rtabmap2d_yaw)
+        if self.ui and hasattr(self.ui, 'update_rtabmap2d_position'):
+            self.ui.update_rtabmap2d_position(
+                self.rtabmap2d_x, self.rtabmap2d_y, self.rtabmap2d_yaw)
         # Also update RTAB-Map 2D Camera position (same odom topic)
         self.rtabmap2d_camera_x = self.rtabmap2d_x
         self.rtabmap2d_camera_y = self.rtabmap2d_y
         self.rtabmap2d_camera_yaw = self.rtabmap2d_yaw
-        self.ui.update_rtabmap2d_camera_position(
-            self.rtabmap2d_camera_x, self.rtabmap2d_camera_y, self.rtabmap2d_camera_yaw)
+        if self.ui and hasattr(self.ui, 'update_rtabmap2d_camera_position'):
+            self.ui.update_rtabmap2d_camera_position(
+                self.rtabmap2d_camera_x, self.rtabmap2d_camera_y, self.rtabmap2d_camera_yaw)
 
     def start_launch_file(self, launch_key, package_name, launch_file, extra_args=None):
         """Start a ROS2 launch file using package name"""
         if self.processes[launch_key] is not None:
-            self.ui.log(f"Launch '{launch_key}' is already running!")
+            self._log(f"Launch '{launch_key}' is already running!")
             return False
 
         if not package_name or not launch_file:
-            self.ui.log(f"Launch not configured: {launch_key}")
+            self._log(f"Launch not configured: {launch_key}")
             return False
 
         try:
@@ -275,14 +295,14 @@ exec {' '.join(cmd)}
             threading.Thread(target=cleanup_files, daemon=True).start()
 
             self.processes[launch_key] = ProcessTracker(actual_pid)
-            self.ui.log(f"Started: {package_name} / {launch_file}")
+            self._log(f"Started: {package_name} / {launch_file}")
             if extra_args:
-                self.ui.log(f"  args: {' '.join(extra_args)}")
+                self._log(f"  args: {' '.join(extra_args)}")
             self.get_logger().info(f"Started {launch_key}: PID={actual_pid}")
             return True
 
         except Exception as e:
-            self.ui.log(f"Failed to start: {str(e)}")
+            self._log(f"Failed to start: {str(e)}")
             self.get_logger().error(f"Failed to start {launch_key}: {str(e)}")
             return False
 
@@ -362,7 +382,7 @@ exec {' '.join(cmd)}
         if not matching_nodes:
             return 0
 
-        self.ui.log(f"[Stage 2] Cleaning up {len(matching_nodes)} remaining nodes: {matching_nodes}")
+        self._log(f"[Stage 2] Cleaning up {len(matching_nodes)} remaining nodes: {matching_nodes}")
 
         cleanup_count = 0
         for node in matching_nodes:
@@ -374,7 +394,7 @@ exec {' '.join(cmd)}
                         timeout=2
                     )
                     cleanup_count += 1
-                    self.ui.log(f"  Sent SIGTERM to: {process_pattern}")
+                    self._log(f"  Sent SIGTERM to: {process_pattern}")
                 except Exception:
                     pass  # Ignore - process may already be dead
 
@@ -383,7 +403,7 @@ exec {' '.join(cmd)}
     def stop_launch_file(self, launch_key):
         """Stop a running launch file"""
         if self.processes[launch_key] is None:
-            self.ui.log(f"Launch '{launch_key}' is not running!")
+            self._log(f"Launch '{launch_key}' is not running!")
             return False
 
         try:
@@ -407,15 +427,15 @@ exec {' '.join(cmd)}
                     return []
 
             all_pids = [process.pid] + get_process_tree(process.pid)
-            self.ui.log(f"Stopping process tree: {all_pids}")
+            self._log(f"Stopping process tree: {all_pids}")
 
             # Try to kill the entire process group first (setsid creates new group)
             try:
                 pgid = os.getpgid(process.pid)
-                self.ui.log(f"Sending SIGINT to process group {pgid}")
+                self._log(f"Sending SIGINT to process group {pgid}")
                 os.killpg(pgid, signal.SIGINT)
             except (ProcessLookupError, OSError) as e:
-                self.ui.log(f"Process group kill failed: {e}, trying individual PIDs")
+                self._log(f"Process group kill failed: {e}, trying individual PIDs")
                 # Fallback: Send SIGINT to individual processes
                 for pid in reversed(all_pids):
                     try:
@@ -435,7 +455,7 @@ exec {' '.join(cmd)}
                     pass
 
             if surviving_pids:
-                self.ui.log(f"Force killing: {surviving_pids}")
+                self._log(f"Force killing: {surviving_pids}")
                 # Try process group SIGKILL first
                 try:
                     pgid = os.getpgid(process.pid)
@@ -453,18 +473,18 @@ exec {' '.join(cmd)}
             # Stage 2: Dynamic cleanup of remaining nodes
             cleaned = self._cleanup_remaining_nodes(launch_key)
             if cleaned > 0:
-                self.ui.log(f"[Stage 2] Cleaned {cleaned} remaining nodes")
+                self._log(f"[Stage 2] Cleaned {cleaned} remaining nodes")
                 time.sleep(0.5)
 
             self.processes[launch_key] = None
-            self.ui.log(f"Stopped: {launch_key}")
+            self._log(f"Stopped: {launch_key}")
             self.get_logger().info(f"Stopped {launch_key}")
 
             time.sleep(1)
             return True
 
         except Exception as e:
-            self.ui.log(f"Failed to stop: {str(e)}")
+            self._log(f"Failed to stop: {str(e)}")
             self.get_logger().error(f"Failed to stop {launch_key}: {str(e)}")
             return False
 
@@ -473,7 +493,7 @@ exec {' '.join(cmd)}
         for key in self.processes.keys():
             if self.processes[key] is not None:
                 self.stop_launch_file(key)
-        self.ui.log("All launches stopped")
+        self._log("All launches stopped")
 
     def is_running(self, launch_key):
         """Check if a launch file is currently running"""
@@ -509,15 +529,15 @@ exec {' '.join(cmd)}
             )
 
             if result.returncode == 0:
-                self.ui.log(f"Map saved: {map_path}")
+                self._log(f"Map saved: {map_path}")
                 self.get_logger().info(f"Map saved: {map_path}")
                 return True, map_path
             else:
-                self.ui.log(f"Failed to save map: {result.stderr}")
+                self._log(f"Failed to save map: {result.stderr}")
                 return False, result.stderr
 
         except Exception as e:
-            self.ui.log(f"Failed to save map: {str(e)}")
+            self._log(f"Failed to save map: {str(e)}")
             return False, str(e)
 
     def save_carto_map(self, map_name):
@@ -531,12 +551,12 @@ exec {' '.join(cmd)}
 
             # Cartographer uses finish_trajectory and write_state services
             # This is a placeholder - actual implementation depends on Cartographer setup
-            self.ui.log(f"Cartographer map save not implemented yet")
-            self.ui.log(f"Map would be saved to: {map_path}")
+            self._log(f"Cartographer map save not implemented yet")
+            self._log(f"Map would be saved to: {map_path}")
             return False, "Not implemented"
 
         except Exception as e:
-            self.ui.log(f"Failed to save map: {str(e)}")
+            self._log(f"Failed to save map: {str(e)}")
             return False, str(e)
 
     def save_kslam_map(self, map_name):
@@ -554,12 +574,12 @@ exec {' '.join(cmd)}
             )
 
             if result.returncode == 0 and 'success=true' in result.stdout.lower():
-                self.ui.log(f"K-SLAM map saved successfully")
+                self._log(f"K-SLAM map saved successfully")
                 self.get_logger().info(f"K-SLAM map saved")
                 return True, "Map saved to ~/Study/ros2_3dslam_ws/maps/"
             else:
                 # Fallback: use nav2_map_server (now works with TRANSIENT_LOCAL QoS)
-                self.ui.log("Trying nav2_map_server...")
+                self._log("Trying nav2_map_server...")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 map_dir = self.workspace_path / 'maps' / 'kslam'
                 os.makedirs(map_dir, exist_ok=True)
@@ -574,25 +594,29 @@ exec {' '.join(cmd)}
                 )
 
                 if result2.returncode == 0:
-                    self.ui.log(f"K-SLAM map saved: {map_path}")
+                    self._log(f"K-SLAM map saved: {map_path}")
                     self.get_logger().info(f"K-SLAM map saved: {map_path}")
                     return True, map_path
                 else:
-                    self.ui.log(f"Failed to save K-SLAM map: {result2.stderr}")
+                    self._log(f"Failed to save K-SLAM map: {result2.stderr}")
                     return False, result2.stderr
 
         except Exception as e:
-            self.ui.log(f"Failed to save K-SLAM map: {str(e)}")
+            self._log(f"Failed to save K-SLAM map: {str(e)}")
             return False, str(e)
 
-    def save_rtabmap2d_map(self, map_name):
+    def save_rtabmap2d_map(self, map_name: str = "", save_directory: str = "") -> str | None:
         """Save RTAB-Map 2D map - copy database and save 2D grid map"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            map_dir = self.workspace_path / 'maps' / 'rtabmap_2d' / timestamp
+            if save_directory:
+                map_dir = Path(save_directory)
+            else:
+                map_dir = self.workspace_path / 'maps' / 'rtabmap_2d' / timestamp
             os.makedirs(map_dir, exist_ok=True)
 
-            map_path = str(map_dir / map_name)
+            effective_name = map_name if map_name else f"rtabmap2d_{timestamp}"
+            map_path = str(map_dir / effective_name)
 
             # 1. Copy rtabmap database file
             import shutil
@@ -601,9 +625,9 @@ exec {' '.join(cmd)}
 
             if os.path.exists(db_source):
                 shutil.copy2(db_source, db_dest)
-                self.ui.log(f"RTAB-Map database saved: {db_dest}")
+                self._log(f"RTAB-Map database saved: {db_dest}")
             else:
-                self.ui.log("Warning: rtabmap.db not found, skipping database backup")
+                self._log("Warning: rtabmap.db not found, skipping database backup")
 
             # 2. Save 2D occupancy grid map using nav2_map_server
             result = subprocess.run(
@@ -617,20 +641,73 @@ exec {' '.join(cmd)}
             )
 
             if result.returncode == 0:
-                self.ui.log(f"RTAB-Map 2D grid map saved: {map_path}.pgm/.yaml")
+                self._log(f"RTAB-Map 2D grid map saved: {map_path}.pgm/.yaml")
                 self.get_logger().info(f"RTAB-Map 2D map saved: {map_path}")
-                return True, map_path
+                return map_path
             else:
                 # Even if grid map fails, database was saved
                 if os.path.exists(db_dest):
-                    self.ui.log(f"2D grid map save failed, but database saved: {db_dest}")
-                    return True, db_dest
-                self.ui.log(f"Failed to save RTAB-Map 2D map: {result.stderr}")
-                return False, result.stderr
+                    self._log(f"2D grid map save failed, but database saved: {db_dest}")
+                    return db_dest
+                self._log(f"Failed to save RTAB-Map 2D map: {result.stderr}")
+                return None
 
         except Exception as e:
-            self.ui.log(f"Failed to save RTAB-Map 2D map: {str(e)}")
-            return False, str(e)
+            self._log(f"Failed to save RTAB-Map 2D map: {str(e)}")
+            return None
+
+
+    def _handle_slam_control(self, request, response):
+        """SlamControl.srv 핸들러"""
+        if request.command == SlamControl.Request.CMD_START_2D:
+            thread = threading.Thread(
+                target=self._start_rtabmap2d_async,
+                daemon=True
+            )
+            thread.start()
+            response.success = True
+            response.message = "rtabmap2d start initiated"
+
+        elif request.command == SlamControl.Request.CMD_STOP:
+            thread = threading.Thread(
+                target=self._stop_rtabmap2d_async,
+                daemon=True
+            )
+            thread.start()
+            response.success = True
+            response.message = "rtabmap2d stop initiated"
+
+        elif request.command == SlamControl.Request.CMD_SAVE_MAP:
+            map_name = request.map_name if request.map_name else ""
+            save_dir = request.save_directory if request.save_directory else ""
+            saved = self.save_rtabmap2d_map(map_name=map_name, save_directory=save_dir)
+            response.success = saved is not None
+            response.saved_path = saved or ""
+            response.message = f"Map saved: {saved}" if saved else "Map save failed"
+
+        else:
+            response.success = False
+            response.message = f"Unknown command: {request.command}"
+
+        return response
+
+    def _start_rtabmap2d_async(self):
+        """thread 내부에서 실행 — blocking sleep 허용"""
+        try:
+            self.start_launch_file(
+                'rtabmap2d_mapping',
+                'rtab_map',
+                'rtabmap_mapping.launch.py'
+            )
+        except Exception as e:
+            self.get_logger().error(f"rtabmap2d start failed: {e}")
+
+    def _stop_rtabmap2d_async(self):
+        """thread 내부에서 실행"""
+        try:
+            self.stop_launch_file('rtabmap2d_mapping')
+        except Exception as e:
+            self.get_logger().error(f"rtabmap2d stop failed: {e}")
 
 
 def main(args=None):

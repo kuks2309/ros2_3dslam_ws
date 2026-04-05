@@ -1,0 +1,37 @@
+# ACS Warehouse Multi-Stop Test Job
+# Robot spawns at (0, 0) in Gazebo my_world
+# Format: Type  X(m)  Y(m)  Yaw(deg)  Timeout(sec)  DriveMode  TurnRadius  Speed
+#
+# Warehouse pickup/delivery route: 4 stations (2x3m CCW rectangle)
+#   Station A: (2,0) - pickup point 1 (east)
+#   Station B: (2,3) - pickup point 2 (north)
+#   Station C: (0,3) - delivery point  (west)
+#   Return:    (0,0) - home base
+# Each station: AUTO drive to location, then WAIT at arrival
+# NOTE: Eastward path at Y=3 beyond X≈2.3 is blocked by pallet_box obstacle.
+#       Westward segment (2,3)→(0,3) avoids this. All segments empirically verified safe.
+
+# --- Station A: (2,0), face east (0 deg) ---
+# Drive to Station A
+AMR    2.0   0.0    0     30.0    AUTO    0.0    0.3
+
+# Wait 3 seconds at Station A (pickup)
+AMR    2.0   0.0    0     10.0    WAIT    0.0    3.0
+
+# --- Station B: (2,3), face north (90 deg) ---
+# Drive to Station B (northward at X=2, confirmed safe to Y=3)
+AMR    2.0   3.0   90     60.0    AUTO    0.0    0.3
+
+# Wait 5 seconds at Station B (pickup)
+AMR    2.0   3.0   90     15.0    WAIT    0.0    5.0
+
+# --- Station C: (0,3), face west (180 deg) ---
+# Drive to Station C (westward at Y=3, confirmed safe)
+AMR    0.0   3.0  180     30.0    AUTO    0.0    0.3
+
+# Wait 3 seconds at Station C (delivery)
+AMR    0.0   3.0  180     10.0    WAIT    0.0    3.0
+
+# --- Return: (0,0), face south (270 deg) ---
+# Drive back to home base (southward at X=0)
+AMR    0.0   0.0  270     60.0    AUTO    0.0    0.3

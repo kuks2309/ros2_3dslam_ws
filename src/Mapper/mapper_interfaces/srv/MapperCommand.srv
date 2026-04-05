@@ -1,0 +1,19 @@
+uint8   CMD_START_MAPPING = 0
+uint8   CMD_PAUSE         = 1
+uint8   CMD_STOP          = 2
+uint8   CMD_SAVE_MAP      = 3
+uint8   CMD_RESUME        = 4
+uint8   CMD_EXPLORE       = 5
+uint8   command
+uint8   SLAM_2D = 0
+uint8   SLAM_3D = 1
+uint8   slam_mode
+uint8   DRIVE_MANUAL     = 0
+uint8   DRIVE_RIGHT_HAND = 1
+uint8   DRIVE_LEFT_HAND  = 2
+uint8   drive_mode
+string  map_name
+string  save_directory
+---
+bool    success
+string  message

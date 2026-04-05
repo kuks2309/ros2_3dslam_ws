@@ -1,0 +1,10 @@
+float64 tolerance_deg
+bool    use_imu_correction
+---
+float64 aligned_heading
+int8    status
+float64 current_error_deg
+float64 wall_angle_deg
+---
+float64 current_error_deg
+float64 wall_angle_deg

@@ -12,6 +12,7 @@
   <depend>nav_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>mapper_interfaces</depend>
 
   <exec_depend>python3-pyqt5</exec_depend>
 

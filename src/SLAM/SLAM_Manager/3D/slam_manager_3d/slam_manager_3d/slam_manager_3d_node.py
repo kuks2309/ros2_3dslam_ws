@@ -23,6 +23,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 from nav_msgs.msg import Odometry
 from ament_index_python.packages import get_package_share_directory
 import math
+from mapper_interfaces.srv import SlamControl
 
 
 def get_workspace_path():
@@ -97,9 +98,9 @@ RELIABLE_QOS = QoSProfile(
 class SlamManager3DNode(Node):
     """ROS2 Node for 3D SLAM Manager"""
 
-    def __init__(self, ui_window):
+    def __init__(self, ui_window=None):  # None 허용 → headless 모드
         super().__init__('slam_manager_3d_node')
-        self.ui = ui_window
+        self.ui = ui_window  # None이면 headless 모드
 
         # Dictionary to store running processes
         self.processes = {
@@ -173,7 +174,73 @@ class SlamManager3DNode(Node):
             odom_qos
         )
 
+        # SlamControl service server
+        self._slam_control_srv = self.create_service(
+            SlamControl,
+            'slam_manager_3d/slam_control',
+            self._handle_slam_control
+        )
+
         self.get_logger().info('SLAM Manager 3D Node initialized')
+
+    def _log(self, msg: str):
+        """UI가 있으면 UI에, 없으면 ROS logger에 로그"""
+        if self.ui:
+            self.ui.log(msg)
+        else:
+            self.get_logger().info(msg)
+
+    def _handle_slam_control(self, request, response):
+        """SlamControl.srv 핸들러"""
+        if request.command == SlamControl.Request.CMD_START_3D:
+            thread = threading.Thread(
+                target=self._start_rtabmap3d_async,
+                daemon=True
+            )
+            thread.start()
+            response.success = True
+            response.message = "rtabmap3d start initiated"
+
+        elif request.command == SlamControl.Request.CMD_STOP:
+            thread = threading.Thread(
+                target=self._stop_rtabmap3d_async,
+                daemon=True
+            )
+            thread.start()
+            response.success = True
+            response.message = "rtabmap3d stop initiated"
+
+        elif request.command == SlamControl.Request.CMD_SAVE_MAP:
+            map_name = request.map_name if request.map_name else ""
+            save_dir = request.save_directory if request.save_directory else ""
+            self._log(f"save_map called: {map_name}, {save_dir}")
+            response.success = False
+            response.saved_path = ""
+            response.message = "Map save not implemented for 3D"
+
+        else:
+            response.success = False
+            response.message = f"Unknown command: {request.command}"
+
+        return response
+
+    def _start_rtabmap3d_async(self):
+        """thread 내부에서 실행 — blocking sleep 허용"""
+        try:
+            self.start_launch_file(
+                'rgbd_mapping',
+                'rtabmap_ros',
+                'rtabmap.launch.py'
+            )
+        except Exception as e:
+            self.get_logger().error(f"rtabmap3d start failed: {e}")
+
+    def _stop_rtabmap3d_async(self):
+        """thread 내부에서 실행"""
+        try:
+            self.stop_launch_file('rgbd_mapping')
+        except Exception as e:
+            self.get_logger().error(f"rtabmap3d stop failed: {e}")
 
     def _rtabmap3d_odom_callback(self, msg):
         """Handle RTAB-Map 3D odometry messages (RGB-D, RGB-D+LiDAR, 3D LiDAR)"""

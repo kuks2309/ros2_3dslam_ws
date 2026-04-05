@@ -1,0 +1,11 @@
+uint8   CMD_START_2D = 0
+uint8   CMD_START_3D = 1
+uint8   CMD_STOP     = 2
+uint8   CMD_SAVE_MAP = 3
+uint8   command
+string  map_name
+string  save_directory
+---
+bool    success
+string  message
+string  saved_path

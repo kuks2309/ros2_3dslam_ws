@@ -1,0 +1,5 @@
+# UpdateStanleyPath — Replace path during active Stanley execution
+nav_msgs/Path new_path
+---
+bool success
+string message

@@ -1,0 +1,32 @@
+mapper_orchestrator:
+  ros__parameters:
+    max_align_retries: 3
+    map_stabilize_wait_sec: 3.0
+    loop_closure_timeout_sec: 30.0
+    min_coverage_to_stop: 0.95
+    slam_control_service_2d: slam_manager_2d/slam_control
+    slam_control_service_3d: slam_manager_3d/slam_control
+
+wall_aligner:
+  ros__parameters:
+    tolerance_deg: 0.2
+    max_attempts: 5
+    spin_speed_deg_s: 40.0
+    spin_accel_deg_s2: 30.0
+    spin_server: spin
+    inlier_dist_m: 0.05
+    min_inliers: 10
+    ransac_iterations: 200
+
+map_alignment_checker:
+  ros__parameters:
+    hough_rho: 1.0
+    hough_theta: 0.017453292
+    hough_threshold: 50
+    hough_min_line_length: 20.0
+    hough_max_line_gap: 5.0
+
+exploration_planner:
+  ros__parameters:
+    max_linear_speed: 0.2
+    acceleration: 0.3

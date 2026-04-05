@@ -1,0 +1,64 @@
+# ACS YAWCTRL Precision Corridor Test Job
+# Robot spawns at (0, 0) in Gazebo my_world
+# Format: Type  X(m)  Y(m)  Yaw(deg)  Timeout(sec)  DriveMode  TurnRadius  Speed
+#
+# Purpose: Test YAWCTRL mode - translates forward while continuously correcting yaw.
+# Unlike TRANSLATE (open-loop heading hold), YAWCTRL closes the loop on yaw error
+# during motion, improving straight-line tracking accuracy in long corridors.
+#
+# Path: C-shaped route with 3 YAWCTRL segments of 3m each
+#   (0,0) --AUTO-->     (1,0)  facing east              - establish heading
+#   (1,0) --YAWCTRL--> (4,0)  facing east (0 deg)      - 3m east corridor
+#   (4,0) --AUTO-->     (2,0)  facing west (180 deg)    - reposition to safe northward X
+#   (2,0) --YAWCTRL--> (2,3)  facing north (90 deg)    - 3m north corridor at X=2
+#   (2,3) --AUTO-->     (0,3)  facing west (180 deg)    - corner turn to south leg
+#   (0,3) --YAWCTRL--> (0,0)  facing south (270 deg)   - 3m south corridor
+#
+# NOTE: Original path used X=4 northward (blocked at Y≈0.87 by warehouse obstacle)
+#       and Y=4 (untested, likely also blocked). Revised to use X=2 northward (confirmed
+#       safe to Y=3) and Y=3 as maximum (empirically verified across multiple tests).
+#
+# YAWCTRL advantage: continuously corrects heading drift during translation,
+# keeping the robot on the intended straight-line path even with wheel slip or
+# IMU noise. Compare vs TRANSLATE mode to observe reduced lateral deviation.
+# Speed: 0.3 m/s
+
+# Step 1: AUTO to (1,0), facing east (0 deg)
+# First move uses AUTO (spin-then-translate) to establish correct heading before
+# entering the long YAWCTRL straight. This ensures yaw is aligned from the start.
+AMR    1.0   0.0    0     30.0    AUTO    0.0    0.3
+
+# Step 2: YAWCTRL (1,0)->(4,0), facing east (0 deg)
+# 3m straight corridor along X axis. YAWCTRL actively corrects yaw drift,
+# keeping the robot from veering off the Y=0 line.
+AMR    4.0   0.0    0     30.0    YAWCTRL    0.0    0.3
+
+# Step 3: AUTO (4,0)->(2,0), facing west (180 deg)
+# Reposition west to X=2 — the maximum safe X for northward travel.
+# (X=3 and above are blocked at Y≈0.87 by a warehouse obstacle.)
+AMR    2.0   0.0  180     30.0    AUTO    0.0    0.3
+
+# Step 3.5: SPIN at (2,0) from 180 deg to 90 deg (face north)
+# YAWCTRL requires pre-aligned heading. Without this SPIN, the robot starts
+# YAWCTRL facing west (180°) with 90° error, causing it to arc north-westward
+# instead of tracking straight north along X=2.
+AMR    2.0   0.0   90     15.0    SPIN    0.0    0.3
+
+# Step 4: YAWCTRL (2,0)->(2,3), facing north (90 deg)
+# 3m straight corridor along Y axis at X=2. YAWCTRL prevents lateral drift,
+# maintaining tight alignment with X=2.0. Confirmed safe to Y=3.
+AMR    2.0   3.0   90     60.0    YAWCTRL    0.0    0.3
+
+# Step 5: AUTO (2,3)->(0,3), facing west (180 deg)
+# Corner turn: AUTO spins to 180 deg then translates 2m west to X=0.
+AMR    0.0   3.0  180     30.0    AUTO    0.0    0.3
+
+# Step 5.5: SPIN at (0,3) from 180 deg to 270 deg (face south)
+# Pre-align heading before the southward YAWCTRL leg.
+# Robot arrives from AUTO facing west (180°); YAWCTRL southward needs 270°.
+AMR    0.0   3.0  270     15.0    SPIN    0.0    0.3
+
+# Step 6: YAWCTRL (0,3)->(0,0), facing south (270 deg)
+# 3m straight corridor heading south at X=0. YAWCTRL closes the loop on yaw error,
+# keeping lateral position on X=0 line as robot descends toward origin.
+AMR    0.0   0.0  270     60.0    YAWCTRL    0.0    0.3

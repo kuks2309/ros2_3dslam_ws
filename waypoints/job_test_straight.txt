@@ -1,0 +1,20 @@
+# ACS TRANSLATE Mode Straight Line Test Job
+# Robot spawns at (0, 0) in Gazebo my_world
+# Format: Type  X(m)  Y(m)  Yaw(deg)  Timeout(sec)  DriveMode  TurnRadius  Speed
+#
+# Purpose: Test TRANSLATE mode - direct straight translation without spin-then-translate.
+# Unlike AUTO mode, TRANSLATE drives the robot directly toward the target XY position
+# while holding the specified yaw orientation throughout the motion (no pre-spin).
+#
+# Path: back-and-forth along X axis
+#   (0,0) --TRANSLATE--> (5,0) facing 0 deg
+#   (5,0) --TRANSLATE--> (0,0) facing 180 deg
+# Speed: 0.4 m/s
+
+# Waypoint 1: Translate forward 5m to (5,0), facing east (0 deg)
+# TRANSLATE mode drives straight to target without spinning first.
+AMR    5.0   0.0    0     30.0    TRANSLATE    0.0    0.4
+
+# Waypoint 2: Return to origin (0,0), facing west (180 deg)
+# TRANSLATE mode again - robot translates back while holding 180 deg yaw.
+AMR    0.0   0.0  180     30.0    TRANSLATE    0.0    0.4

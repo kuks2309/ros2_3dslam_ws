@@ -1,0 +1,7 @@
+float64 tolerance_deg
+---
+bool    is_aligned
+float64 max_wall_error_deg
+---
+float64 progress
+float64 current_max_error_deg

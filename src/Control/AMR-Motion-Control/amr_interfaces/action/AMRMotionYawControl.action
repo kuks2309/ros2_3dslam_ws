@@ -1,30 +1,21 @@
-# AMRMotionYawControl — Heading-only straight line (no lateral CTE correction)
+# AMRMotionYawControl — Heading-hold forward drive (runs until stop/cancel)
 # Goal
-float64 start_x              # map frame start X (m)
-float64 start_y              # map frame start Y (m)
-float64 end_x                # map frame end X (m)
-float64 end_y                # map frame end Y (m)
+float64 target_heading       # target heading angle (deg, map frame)
 float64 max_linear_speed     # m/s (> 0, max 0.4 for Gazebo)
-float64 acceleration         # m/s^2 (> 0)
+float64 acceleration         # m/s^2 (ramp-up on start)
+float64 deceleration         # m/s^2 (ramp-down on stop service)
+float64 stop_distance        # auto-stop after traveling this distance (m); 0 = run until stop service
 # ACS waypoint system fields
 bool    hold_steer
-float64 exit_speed
-bool    has_next
 ---
 # Result
-int8    status               # 0=success, -1=cancelled, -2=invalid_param, -3=timeout, -4=safety_stop
-float64 actual_distance      # m
-float64 final_lateral_error  # m
+int8    status               # 0=stopped, -1=cancelled, -2=invalid_param, -3=timeout, -4=safety_stop
+float64 total_distance       # total traveled distance (m)
 float64 final_heading_error  # deg
 float64 elapsed_time         # sec
 ---
 # Feedback
-float64 current_distance     # m
-float64 current_lateral_error # m
 float64 current_heading_error # deg
 float64 current_vx           # m/s
-float64 current_vy           # m/s
 float64 current_omega        # rad/s
 uint8   phase                # 1=accel, 2=cruise, 3=decel
-float64 w1_drive_rpm         # left wheel RPM (info only)
-float64 w2_drive_rpm         # right wheel RPM (info only)

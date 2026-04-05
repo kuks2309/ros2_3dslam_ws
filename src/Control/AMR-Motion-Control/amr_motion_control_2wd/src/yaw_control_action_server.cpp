@@ -10,7 +10,6 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
 #include "amr_motion_control_2wd/motion_common.hpp"
-#include "amr_motion_control_2wd/motion_profile.hpp"
 #include "amr_motion_control_2wd/localization_watchdog.hpp"
 
 using std::placeholders::_1;
@@ -19,13 +18,10 @@ using std::placeholders::_2;
 namespace amr_motion_control_2wd
 {
 
-
 YawControlActionServer::YawControlActionServer(rclcpp::Node::SharedPtr node)
 : node_(node)
 {
   control_rate_hz_          = safeParam(node_, "yaw_ctrl.control_rate_hz",    20.0);
-  min_vx_                   = safeParam(node_, "yaw_ctrl.min_vx",              0.02);
-  goal_reach_threshold_     = safeParam(node_, "yaw_ctrl.goal_reach_threshold", 0.05);
   max_timeout_sec_          = safeParam(node_, "yaw_ctrl.max_timeout_sec",     60.0);
   Kp_heading_               = safeParam(node_, "yaw_ctrl.Kp_heading",           1.0);
   Kd_heading_               = safeParam(node_, "yaw_ctrl.Kd_heading",           0.3);
@@ -39,8 +35,7 @@ YawControlActionServer::YawControlActionServer(rclcpp::Node::SharedPtr node)
   tf_buffer_   = std::make_shared<tf2_ros::Buffer>(node_->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-  cmd_vel_pub_  = node_->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
-  path_viz_pub_ = node_->create_publisher<nav_msgs::msg::Path>("yaw_ctrl_path_viz", 1);
+  cmd_vel_pub_ = node_->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
 
   imu_sub_ = node_->create_subscription<sensor_msgs::msg::Imu>(
     "imu/data", rclcpp::SensorDataQoS(),
@@ -51,13 +46,26 @@ YawControlActionServer::YawControlActionServer(rclcpp::Node::SharedPtr node)
     pose_topic, rclcpp::SensorDataQoS(),
     std::bind(&YawControlActionServer::poseCallback, this, _1));
 
+  // Stop service: graceful deceleration
+  stop_srv_ = node_->create_service<std_srvs::srv::Trigger>(
+    "yaw_control_stop",
+    [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+           std::shared_ptr<std_srvs::srv::Trigger::Response> res)
+    {
+      stop_requested_.store(true);
+      res->success = true;
+      res->message = "Deceleration stop requested";
+      RCLCPP_INFO(node_->get_logger(), "YawControlActionServer: stop service called — decelerating");
+    });
+
   action_server_ = rclcpp_action::create_server<YawControl>(
     node_, "amr_motion_yaw_control",
     std::bind(&YawControlActionServer::handle_goal,     this, _1, _2),
     std::bind(&YawControlActionServer::handle_cancel,   this, _1),
     std::bind(&YawControlActionServer::handle_accepted, this, _1));
 
-  RCLCPP_INFO(node_->get_logger(), "YawControlActionServer ready");
+  RCLCPP_INFO(node_->get_logger(),
+    "YawControlActionServer ready (stop service: /yaw_control_stop)");
 }
 
 void YawControlActionServer::imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg)
@@ -136,278 +144,264 @@ void YawControlActionServer::execute(const std::shared_ptr<GoalHandleYaw> goal_h
       "YawControlActionServer: another action is active (%s), aborting new goal",
       to_string(g_active_action.load()));
     auto result = std::make_shared<YawControl::Result>();
-    result->status = -2;  // invalid_param (busy)
+    result->status = -2;
     try { goal_handle->abort(result); } catch (const std::exception & e) {
       RCLCPP_WARN(node_->get_logger(),
         "YawControlActionServer: abort failed (stale handle): %s", e.what());
     }
     return;
   }
-  ActionGuard action_guard;  // clears g_active_action on scope exit
+  ActionGuard action_guard;
 
-  const auto & goal   = goal_handle->get_goal();
+  const auto & goal = goal_handle->get_goal();
   const auto start_time = node_->now();
 
-  // ── 1. Validate path ─────────────────────────────────────────────────────
-  const double dx       = goal->end_x - goal->start_x;
-  const double dy       = goal->end_y - goal->start_y;
-  const double path_len = std::hypot(dx, dy);
+  // Reset stop flag
+  stop_requested_.store(false);
 
-  if (path_len < 1e-4) {
+  // ── 1. Validate parameters ────────────────────────────────────────────────
+  if (goal->max_linear_speed <= 0.0 || goal->acceleration <= 0.0 ||
+      goal->deceleration <= 0.0) {
     RCLCPP_WARN(node_->get_logger(),
-      "YawControlActionServer: path length near zero (%.4f m), aborting", path_len);
+      "YawControlActionServer: invalid params (speed=%.3f accel=%.3f decel=%.3f)",
+      goal->max_linear_speed, goal->acceleration, goal->deceleration);
     auto result = std::make_shared<YawControl::Result>();
-    result->status      = -2;  // invalid_param
-    result->elapsed_time = 0.0;
+    result->status = -2;
     try { goal_handle->abort(result); } catch (const std::exception & e) {
       RCLCPP_WARN(node_->get_logger(),
-        "YawControlActionServer: abort failed (stale handle): %s", e.what());
+        "YawControlActionServer: abort failed: %s", e.what());
     }
     return;
   }
 
-  if (goal->max_linear_speed <= 0.0 || goal->acceleration <= 0.0) {
-    RCLCPP_WARN(node_->get_logger(),
-      "YawControlActionServer: invalid params (speed=%.3f accel=%.3f), aborting",
-      goal->max_linear_speed, goal->acceleration);
-    auto result = std::make_shared<YawControl::Result>();
-    result->status      = -2;  // invalid_param
-    result->elapsed_time = 0.0;
-    try { goal_handle->abort(result); } catch (const std::exception & e) {
-      RCLCPP_WARN(node_->get_logger(),
-        "YawControlActionServer: abort failed (stale handle): %s", e.what());
-    }
-    return;
-  }
-
-  // ── 2. Compute path geometry ──────────────────────────────────────────────
-  const double theta_path      = std::atan2(dy, dx);
-  const double target_distance = path_len;
-  const double ux              = dx / path_len;
-  const double uy              = dy / path_len;
+  const double target_heading_rad = goal->target_heading * M_PI / 180.0;
 
   RCLCPP_INFO(node_->get_logger(),
-    "YawControlActionServer: goal (%.3f,%.3f)->(%.3f,%.3f) "
-    "theta=%.3f rad len=%.3f m v=%.3f a=%.3f",
-    goal->start_x, goal->start_y, goal->end_x, goal->end_y,
-    theta_path, target_distance, goal->max_linear_speed, goal->acceleration);
+    "YawControlActionServer: heading=%.1f deg, v_max=%.3f, accel=%.3f, decel=%.3f",
+    goal->target_heading, goal->max_linear_speed,
+    goal->acceleration, goal->deceleration);
 
-  // ── 3. Trapezoidal speed profile ──────────────────────────────────────────
-  amr_motion_control::TrapezoidalProfile profile(
-    target_distance,
-    goal->max_linear_speed,
-    goal->acceleration,
-    0.0);  // exit speed = 0 (stop at goal)
-
-  // ── 4. Localization watchdog ──────────────────────────────────────────────
+  // ── 2. Localization watchdog ──────────────────────────────────────────────
   LocalizationWatchdog::Config wd_cfg;
   wd_cfg.timeout_sec          = 2.0;
   wd_cfg.fixed_jump_threshold = 0.5;
   wd_cfg.velocity_margin      = 1.3;
   watchdog_.emplace(wd_cfg, node_->get_logger());
 
-  // ── 5. Wait for pose (5 s timeout) ───────────────────────────────────────
+  // ── 3. Wait for pose (5 s timeout) ───────────────────────────────────────
   {
     rclcpp::Rate wait_rate(20);
     int wait_count = 0;
     while (rclcpp::ok() && !watchdog_->poseReceived()) {
-      if (!rclcpp::ok()) break;
       wait_rate.sleep();
       if (++wait_count > 100) {
         RCLCPP_ERROR(node_->get_logger(),
           "YawControlActionServer: no pose received after 5 s, aborting");
         publishCmdVel(0.0, 0.0);
         auto result = std::make_shared<YawControl::Result>();
-        result->status       = -3;  // timeout
+        result->status       = -3;
         result->elapsed_time = (node_->now() - start_time).seconds();
         try { goal_handle->abort(result); } catch (const std::exception & e) {
           RCLCPP_WARN(node_->get_logger(),
-            "YawControlActionServer: abort failed (stale handle): %s", e.what());
+            "YawControlActionServer: abort failed: %s", e.what());
         }
         return;
       }
     }
   }
 
-  // ── 6. Get initial robot pose ─────────────────────────────────────────────
+  // ── 4. Get initial pose for distance tracking ─────────────────────────────
   double rob_x = 0.0, rob_y = 0.0, rob_yaw = 0.0;
   if (!lookupRobotPose(rob_x, rob_y, rob_yaw)) {
     rob_x   = watchdog_->x();
     rob_y   = watchdog_->y();
     rob_yaw = watchdog_->yaw();
   }
+  double prev_x = rob_x;
+  double prev_y = rob_y;
+  double total_distance = 0.0;
+
   RCLCPP_INFO(node_->get_logger(),
-    "YawControlActionServer: initial pose=(%.3f, %.3f, %.3f rad) "
-    "path_start=(%.3f,%.3f) arrive_thresh=%.3f m",
-    rob_x, rob_y, rob_yaw,
-    goal->start_x, goal->start_y, goal_reach_threshold_);
+    "YawControlActionServer: initial pose=(%.3f, %.3f, %.1f deg)",
+    rob_x, rob_y, rob_yaw * 180.0 / M_PI);
 
-  // Reference origin: path start (map frame)
-  const double ref_x = goal->start_x;
-  const double ref_y = goal->start_y;
-
-  // ── 7. Control loop ───────────────────────────────────────────────────────
+  // ── 5. Control loop ───────────────────────────────────────────────────────
   rclcpp::Rate rate(control_rate_hz_);
   const double dt = 1.0 / control_rate_hz_;
 
   double prev_e_theta = 0.0;
   double prev_omega   = 0.0;
   double prev_vx      = 0.0;
+  bool   decelerating = false;
 
   while (rclcpp::ok()) {
-    if (!rclcpp::ok()) break;
-
-    // ── a. Cancellation check ─────────────────────────────────────────────
+    // ── a. Cancel check → immediate stop ──────────────────────────────────
     if (goal_handle->is_canceling()) {
       publishCmdVel(0.0, 0.0);
       auto result = std::make_shared<YawControl::Result>();
       result->status          = -1;  // cancelled
-      result->actual_distance = 0.0;
+      result->total_distance  = total_distance;
+      result->final_heading_error =
+        normalizeAngle(rob_yaw - target_heading_rad) * 180.0 / M_PI;
       result->elapsed_time    = (node_->now() - start_time).seconds();
       try { goal_handle->canceled(result); } catch (const std::exception & e) {
         RCLCPP_WARN(node_->get_logger(),
-          "YawControlActionServer: canceled failed (stale handle): %s", e.what());
+          "YawControlActionServer: canceled failed: %s", e.what());
       }
-      RCLCPP_INFO(node_->get_logger(), "YawControlActionServer: cancelled");
+      RCLCPP_INFO(node_->get_logger(),
+        "YawControlActionServer: cancelled (dist=%.3f m)", total_distance);
       return;
     }
 
-    // ── a. Timeout check ─────────────────────────────────────────────────
+    // ── b. Stop service check → start deceleration ────────────────────────
+    if (stop_requested_.load() && !decelerating) {
+      decelerating = true;
+      RCLCPP_INFO(node_->get_logger(),
+        "YawControlActionServer: deceleration started (decel=%.3f m/s^2)",
+        goal->deceleration);
+    }
+
+    // ── c. Timeout check ──────────────────────────────────────────────────
     const double elapsed = (node_->now() - start_time).seconds();
     if (elapsed > max_timeout_sec_) {
       publishCmdVel(0.0, 0.0);
       RCLCPP_ERROR(node_->get_logger(),
-        "YawControlActionServer: timeout after %.1f s, aborting", elapsed);
+        "YawControlActionServer: timeout after %.1f s", elapsed);
       auto result = std::make_shared<YawControl::Result>();
-      result->status       = -3;  // timeout
-      result->elapsed_time = elapsed;
+      result->status          = -3;
+      result->total_distance  = total_distance;
+      result->elapsed_time    = elapsed;
       try { goal_handle->abort(result); } catch (const std::exception & e) {
         RCLCPP_WARN(node_->get_logger(),
-          "YawControlActionServer: abort failed (stale handle): %s", e.what());
+          "YawControlActionServer: abort failed: %s", e.what());
       }
       return;
     }
 
-    // ── a. Localization watchdog health check ─────────────────────────────
+    // ── d. Localization watchdog ───────────────────────────────────────────
     if (enable_localization_watchdog_ && !watchdog_->checkHealth()) {
       publishCmdVel(0.0, 0.0);
       RCLCPP_ERROR(node_->get_logger(),
-        "YawControlActionServer: localization watchdog triggered, aborting");
+        "YawControlActionServer: localization watchdog triggered");
       auto result = std::make_shared<YawControl::Result>();
-      result->status       = -3;  // timeout (localization lost)
-      result->elapsed_time = elapsed;
+      result->status          = -4;
+      result->total_distance  = total_distance;
+      result->elapsed_time    = elapsed;
       try { goal_handle->abort(result); } catch (const std::exception & e) {
         RCLCPP_WARN(node_->get_logger(),
-          "YawControlActionServer: abort failed (stale handle): %s", e.what());
+          "YawControlActionServer: abort failed: %s", e.what());
       }
       return;
     }
 
-    // ── b. Get robot pose (TF2: map→base_footprint) ───────────────────────
+    // ── e. Get robot pose ─────────────────────────────────────────────────
     if (!lookupRobotPose(rob_x, rob_y, rob_yaw)) {
       rob_x   = watchdog_->x();
       rob_y   = watchdog_->y();
       rob_yaw = watchdog_->yaw();
     }
 
-    // ── c. Projection along path ──────────────────────────────────────────
-    const double dx_r    = rob_x - ref_x;
-    const double dy_r    = rob_y - ref_y;
-    const double traveled = std::max(0.0, dx_r * ux + dy_r * uy);
+    // ── f. Accumulate distance ────────────────────────────────────────────
+    total_distance += std::hypot(rob_x - prev_x, rob_y - prev_y);
+    prev_x = rob_x;
+    prev_y = rob_y;
 
-    // ── d. Remaining distance ─────────────────────────────────────────────
-    const double remaining = target_distance - traveled;
+    // ── f2. Auto-stop when stop_distance reached ──────────────────────────
+    if (goal->stop_distance > 0.0 &&
+        total_distance >= goal->stop_distance &&
+        !stop_requested_.load())
+    {
+      stop_requested_.store(true);
+      RCLCPP_INFO(node_->get_logger(),
+        "YawControlActionServer: stop_distance=%.3f m reached (traveled=%.3f m) — decelerating",
+        goal->stop_distance, total_distance);
+    }
 
-    // ── e. Arrival check ──────────────────────────────────────────────────
-    if (remaining <= goal_reach_threshold_) {
+    // ── g. Compute target vx ──────────────────────────────────────────────
+    double vx_target;
+    uint8_t phase;
+
+    if (decelerating) {
+      // Decelerate to zero
+      vx_target = 0.0;
+      phase = 3;  // DECEL
+    } else if (prev_vx < goal->max_linear_speed) {
+      // Accelerating
+      vx_target = goal->max_linear_speed;
+      phase = 1;  // ACCEL
+    } else {
+      // Cruising
+      vx_target = goal->max_linear_speed;
+      phase = 2;  // CRUISE
+    }
+
+    // ── h. Walk velocity smoother ─────────────────────────────────────────
+    double vx = vx_target;
+    if (decelerating) {
+      // Use goal deceleration rate
+      const double decel_step = goal->deceleration * dt;
+      vx = std::max(0.0, prev_vx - decel_step);
+    } else if (vx > prev_vx) {
+      const double accel_step = goal->acceleration * dt;
+      vx = std::min(vx, prev_vx + accel_step);
+    }
+    prev_vx = vx;
+
+    // ── i. Deceleration complete → succeed ────────────────────────────────
+    if (decelerating && vx < 1e-3) {
       publishCmdVel(0.0, 0.0);
-      const double e_lateral = -(dx_r * uy - dy_r * ux);
-      const double e_heading_deg =
-        normalizeAngle(rob_yaw - theta_path) * 180.0 / M_PI;
       auto result = std::make_shared<YawControl::Result>();
-      result->status              = 0;  // success
-      result->actual_distance     = traveled;
-      result->final_lateral_error = e_lateral;
-      result->final_heading_error = e_heading_deg;
-      result->elapsed_time        = (node_->now() - start_time).seconds();
+      result->status          = 0;  // stopped (success)
+      result->total_distance  = total_distance;
+      result->final_heading_error =
+        normalizeAngle(rob_yaw - target_heading_rad) * 180.0 / M_PI;
+      result->elapsed_time    = (node_->now() - start_time).seconds();
       try { goal_handle->succeed(result); } catch (const std::exception & e) {
         RCLCPP_WARN(node_->get_logger(),
-          "YawControlActionServer: succeed failed (stale handle): %s", e.what());
+          "YawControlActionServer: succeed failed: %s", e.what());
       }
       RCLCPP_INFO(node_->get_logger(),
-        "YawControlActionServer: arrived (dist=%.3f m, lat=%.3f m, "
-        "hdg=%.2f deg, t=%.2f s)",
-        traveled, e_lateral, e_heading_deg, result->elapsed_time);
+        "YawControlActionServer: stopped (dist=%.3f m, hdg_err=%.2f deg, t=%.2f s)",
+        total_distance, result->final_heading_error, result->elapsed_time);
       return;
     }
 
-    // ── f. Speed from trapezoidal profile ─────────────────────────────────
-    const auto profile_out = profile.getSpeed(std::min(traveled, target_distance));
-    double vx = profile_out.speed;
-
-    // ── g. Minimum start speed to overcome static friction ────────────────
-    if (profile_out.phase != amr_motion_control::ProfilePhase::DONE &&
-        vx < min_vx_ && remaining > goal_reach_threshold_) {
-      vx = min_vx_;
-    }
-
-    // ── h. Heading error: e_theta = normalizeAngle(rob_yaw - theta_path) ──
-    const double e_theta = normalizeAngle(rob_yaw - theta_path);
-
-    // ── i. PD heading control ─────────────────────────────────────────────
+    // ── j. Heading error PD control ───────────────────────────────────────
+    const double e_theta = normalizeAngle(rob_yaw - target_heading_rad);
     const double de_theta = (e_theta - prev_e_theta) / dt;
     double omega = -Kp_heading_ * e_theta - Kd_heading_ * de_theta;
     prev_e_theta = e_theta;
 
-    // ── j. Clamp omega ────────────────────────────────────────────────────
-    // Hard clamp to max_omega_
+    // ── k. Clamp omega ────────────────────────────────────────────────────
     omega = std::clamp(omega, -max_omega_, max_omega_);
-    // Min turning radius constraint: |omega| <= vx / min_turning_radius_
     if (vx > 1e-6 && min_turning_radius_ > 1e-6) {
       const double omega_radius_limit = vx / min_turning_radius_;
       omega = std::clamp(omega, -omega_radius_limit, omega_radius_limit);
     }
 
-    // ── k. Omega rate limit ───────────────────────────────────────────────
+    // ── l. Omega rate limit ───────────────────────────────────────────────
     const double omega_delta_max = omega_rate_limit_ * dt;
     omega = std::clamp(omega,
                        prev_omega - omega_delta_max,
                        prev_omega + omega_delta_max);
     prev_omega = omega;
 
-    // ── l. Walk velocity smoother (accel/decel limit on vx) ───────────────
-    const double vx_accel_step = walk_accel_limit_ * dt;
-    const double vx_decel_step = walk_decel_limit_ * dt;
-    if (vx > prev_vx) {
-      vx = std::min(vx, prev_vx + vx_accel_step);
-    } else {
-      vx = std::max(vx, prev_vx - vx_decel_step);
-    }
-    prev_vx = vx;
-
     // ── m. Publish velocity ───────────────────────────────────────────────
     watchdog_->setCurrentSpeed(std::abs(vx));
     publishCmdVel(vx, omega);
 
     RCLCPP_INFO_THROTTLE(node_->get_logger(), *node_->get_clock(), 500,
-      "YawControlActionServer: rob=(%.3f,%.3f,%.3f deg) "
-      "traveled=%.3f remaining=%.3f vx=%.3f omega=%.3f e_theta=%.3f deg phase=%u",
+      "YawCtrl: pos=(%.2f,%.2f) hdg=%.1f° err=%.1f° vx=%.3f ω=%.3f dist=%.2f phase=%u",
       rob_x, rob_y, rob_yaw * 180.0 / M_PI,
-      traveled, remaining, vx, omega,
-      e_theta * 180.0 / M_PI,
-      static_cast<unsigned>(profile_out.phase));
+      e_theta * 180.0 / M_PI, vx, omega, total_distance, phase);
 
     // ── n. Publish feedback ───────────────────────────────────────────────
     {
-      const double e_lateral = -(dx_r * uy - dy_r * ux);
       auto feedback = std::make_shared<YawControl::Feedback>();
-      feedback->current_distance      = traveled;
-      feedback->current_lateral_error = e_lateral;
       feedback->current_heading_error = e_theta * 180.0 / M_PI;
       feedback->current_vx            = vx;
-      feedback->current_vy            = 0.0;
       feedback->current_omega         = omega;
-      feedback->phase                 = static_cast<uint8_t>(profile_out.phase);
+      feedback->phase                 = phase;
       goal_handle->publish_feedback(feedback);
     }
 
