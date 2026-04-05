@@ -1,7 +1,6 @@
 #include "mapper/wall_aligner_node.hpp"
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
-#include <tf2/utils.h>
 #include <cmath>
 #include <random>
 #include <thread>
@@ -13,6 +12,9 @@ WallAlignerNode::WallAlignerNode(const rclcpp::NodeOptions & options)
 : Node("wall_aligner_node", options)
 {
     using namespace std::placeholders;
+
+    tf_buffer_   = std::make_shared<tf2_ros::Buffer>(get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // C1: 파라미터 선언 및 로드
     tolerance_deg_    = declare_parameter("tolerance_deg", 0.2);
@@ -91,9 +93,18 @@ Line2D WallAlignerNode::detect_longest_wall(
 
 double WallAlignerNode::get_robot_yaw_deg()
 {
-    // TF2를 사용해 map->base_link yaw 반환
-    // 단순화: 0.0 반환 (실제 사용 시 TF lookup 구현)
-    return 0.0;
+    try {
+        auto tf = tf_buffer_->lookupTransform(
+            "map", "base_link", tf2::TimePointZero);
+        const auto & q = tf.transform.rotation;
+        double siny_cosp = 2.0 * (q.w * q.z + q.x * q.y);
+        double cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+        return std::atan2(siny_cosp, cosy_cosp) * 180.0 / M_PI;
+    } catch (const tf2::TransformException & ex) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+            "TF lookup failed: %s", ex.what());
+        return 0.0;
+    }
 }
 
 rclcpp_action::GoalResponse WallAlignerNode::handle_goal(
@@ -115,8 +126,9 @@ rclcpp_action::CancelResponse WallAlignerNode::handle_cancel(
 void WallAlignerNode::handle_accepted(
     const std::shared_ptr<GoalHandleWallAlign> goal_handle)
 {
-    std::thread([this, goal_handle]() {
-        execute(goal_handle);
+    auto self = std::static_pointer_cast<WallAlignerNode>(shared_from_this());
+    std::thread([self, goal_handle]() {
+        self->execute(goal_handle);
     }).detach();
 }
 

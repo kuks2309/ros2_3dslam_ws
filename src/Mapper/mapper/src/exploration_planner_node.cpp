@@ -244,8 +244,9 @@ rclcpp_action::CancelResponse ExplorationPlannerNode::handle_cancel(
 void ExplorationPlannerNode::handle_accepted(
     std::shared_ptr<GoalHandle> goal_handle)
 {
-    std::thread([this, goal_handle]() {
-        execute(goal_handle);
+    auto self = std::static_pointer_cast<ExplorationPlannerNode>(shared_from_this());
+    std::thread([self, goal_handle]() {
+        self->execute(goal_handle);
     }).detach();
 }
 

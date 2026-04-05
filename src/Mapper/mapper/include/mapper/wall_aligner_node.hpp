@@ -5,6 +5,8 @@
 #include <geometry_msgs/msg/point.hpp>
 #include <mapper_interfaces/action/wall_align.hpp>
 #include <amr_interfaces/action/amr_motion_spin.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 #include <atomic>
 #include <mutex>
 #include <vector>
@@ -33,6 +35,9 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     sensor_msgs::msg::LaserScan::SharedPtr latest_scan_;
     std::mutex scan_mutex_;
+
+    std::shared_ptr<tf2_ros::Buffer>            tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
     double tolerance_deg_{0.2};
     int    max_iterations_{100};

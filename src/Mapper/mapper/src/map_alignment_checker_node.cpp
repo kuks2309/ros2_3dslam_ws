@@ -99,8 +99,9 @@ rclcpp_action::CancelResponse MapAlignmentCheckerNode::handle_cancel(
 void MapAlignmentCheckerNode::handle_accepted(
     std::shared_ptr<GoalHandle> goal_handle)
 {
-    std::thread([this, goal_handle]() {
-        execute(goal_handle);
+    auto self = std::static_pointer_cast<MapAlignmentCheckerNode>(shared_from_this());
+    std::thread([self, goal_handle]() {
+        self->execute(goal_handle);
     }).detach();
 }
 

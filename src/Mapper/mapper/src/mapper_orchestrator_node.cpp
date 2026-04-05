@@ -87,6 +87,7 @@ void MapperOrchestratorNode::handle_command(
     using Cmd = mapper_interfaces::srv::MapperCommand::Request;
     std::lock_guard<std::mutex> lock(state_mutex_);
     auto state = state_.load();
+    auto self  = std::static_pointer_cast<MapperOrchestratorNode>(shared_from_this());
 
     switch (req->command) {
     case Cmd::CMD_START_MAPPING:
@@ -95,7 +96,7 @@ void MapperOrchestratorNode::handle_command(
             drive_mode_ = req->drive_mode;
             align_retry_count_.store(0);
             transition_to_unlocked(MapperState::ALIGNING);  // H4: 이미 mutex 보유
-            std::thread([this]{ run_aligning(); }).detach();
+            std::thread([self]{ self->run_aligning(); }).detach();
             res->success = true;
             res->message = "Mapping started";
         } else {
@@ -122,9 +123,9 @@ void MapperOrchestratorNode::handle_command(
             auto prev = previous_state_.load();
             transition_to_unlocked(prev);  // H4
             if (prev == MapperState::MAPPING_MANUAL)
-                std::thread([this]{ run_mapping_manual(); }).detach();
+                std::thread([self]{ self->run_mapping_manual(); }).detach();
             else if (prev == MapperState::EXPLORING_UNKNOWN)
-                std::thread([this]{ run_exploring(); }).detach();
+                std::thread([self]{ self->run_exploring(); }).detach();
             res->success = true;
             res->message = "Resumed";
         } else {
@@ -145,7 +146,7 @@ void MapperOrchestratorNode::handle_command(
     case Cmd::CMD_EXPLORE:
         if (state == MapperState::MAPPING_MANUAL) {
             transition_to_unlocked(MapperState::EXPLORING_UNKNOWN);  // H4
-            std::thread([this]{ run_exploring(); }).detach();
+            std::thread([self]{ self->run_exploring(); }).detach();
             res->success = true;
             res->message = "Exploration started";
         } else {
