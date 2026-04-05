@@ -13,7 +13,7 @@ namespace amr_motion_control_2wd
 {
 
 enum class ActiveAction : uint8_t {
-  NONE = 0, SPIN, TURN, TRANSLATE, TRANSLATE_REVERSE, YAW_CONTROL
+  NONE = 0, SPIN, TURN, TRANSLATE, TRANSLATE_REVERSE, YAW_CONTROL, PURE_PURSUIT, STANLEY
 };
 
 extern std::atomic<ActiveAction> g_active_action;
@@ -27,6 +27,8 @@ inline const char* to_string(ActiveAction a)
     case ActiveAction::TRANSLATE:         return "TRANSLATE";
     case ActiveAction::TRANSLATE_REVERSE: return "TRANSLATE_REVERSE";
     case ActiveAction::YAW_CONTROL:       return "YAW_CONTROL";
+    case ActiveAction::PURE_PURSUIT:     return "PURE_PURSUIT";
+    case ActiveAction::STANLEY:          return "STANLEY";
     default:                              return "UNKNOWN";
   }
 }

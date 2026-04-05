@@ -1,0 +1,24 @@
+# ACS AUTO Mode L-Shaped Corridor Test Job
+# Robot spawns at (0, 0) in Gazebo my_world
+# Format: Type  X(m)  Y(m)  Yaw(deg)  Timeout(sec)  DriveMode  TurnRadius  Speed
+#
+# Purpose: Test AUTO mode navigating an L-shaped warehouse corridor.
+# AUTO mode performs spin-then-translate, ideal for handling 90-degree corners.
+#
+# Path: L-shaped corridor
+#   Segment 1 (horizontal): (0,0) --AUTO--> (6,0) facing 0 deg at 0.3 m/s
+#   Corner turn at (6,0): spin to face 90 deg (north)
+#   Segment 2 (vertical):  (6,0) --AUTO--> (6,4) facing 90 deg at 0.25 m/s
+#
+# Timeout calculation (distance/speed * 3 safety factor):
+#   Segment 1: 6m / 0.3 m/s * 3 = 60s
+#   Segment 2: 4m / 0.25 m/s * 3 = 48s
+
+# Waypoint 1: Drive east along horizontal corridor to corner at (6,0), facing east (0 deg)
+# AUTO mode: robot spins to 0 deg then translates forward 6m.
+AMR    6.0   0.0    0     60.0    AUTO    0.0    0.3
+
+# Waypoint 2: Navigate north along vertical corridor to end point (6,4), facing north (90 deg)
+# AUTO mode: robot spins to 90 deg at corner then translates 4m up the vertical segment.
+# Slower speed (0.25 m/s) simulates narrow corridor caution.
+AMR    6.0   4.0   90     48.0    AUTO    0.0    0.25

@@ -508,15 +508,14 @@ void ActionChainer::executeYawControl(const waypoint_interfaces::msg::Segment & 
   }
 
   auto goal = YawControlAction::Goal();
-  goal.start_x = seg.start_x;
-  goal.start_y = seg.start_y;
-  goal.end_x = seg.end_x;
-  goal.end_y = seg.end_y;
+  double dx = seg.end_x - seg.start_x;
+  double dy = seg.end_y - seg.start_y;
+  goal.target_heading = std::atan2(dy, dx) * 180.0 / M_PI;
   goal.max_linear_speed = seg.max_linear_speed;
   goal.acceleration = seg.acceleration;
+  goal.deceleration = seg.acceleration;
+  goal.stop_distance = std::hypot(dx, dy);
   goal.hold_steer = seg.hold_steer;
-  goal.exit_speed = seg.exit_speed;
-  goal.has_next = seg.has_next;
 
   segment_done_.store(false);
   segment_status_ = 0;
@@ -528,7 +527,7 @@ void ActionChainer::executeYawControl(const waypoint_interfaces::msg::Segment & 
     [this](const rclcpp_action::ClientGoalHandle<YawControlAction>::WrappedResult & wrapped) {
       std::lock_guard<std::mutex> lock(result_mutex_);
       segment_status_ = wrapped.result->status;
-      segment_distance_ = wrapped.result->actual_distance;
+      segment_distance_ = wrapped.result->total_distance;
       segment_done_.store(true);
     };
 
@@ -543,7 +542,7 @@ void ActionChainer::executeYawControl(const waypoint_interfaces::msg::Segment & 
         cfb.segment_action_type = seg.action_type;
         cfb.segment_phase = fb->phase;
         cfb.current_speed = fb->current_vx;
-        cfb.distance_remaining = total_dist - fb->current_distance;
+        cfb.distance_remaining = total_dist;  // YawControl feedback has no current_distance
         cfb.waypoint_id = seg.waypoint_to;
         on_feedback_(cfb);
       }

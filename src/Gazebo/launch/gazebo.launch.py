@@ -12,6 +12,7 @@ def generate_launch_description():
     world_file = os.path.join(pkg_src, 'worlds', 'my_world.sdf')
     models_path = os.path.join(pkg_src, 'models')
     rviz_config = os.path.join(pkg_src, 'rviz2', 'gazebo.rviz')
+    urdf_file = os.path.join(pkg_src, 'urdf', 'pioneer2dx.urdf')
 
     # Launch arguments
     world_arg = DeclareLaunchArgument(
@@ -66,6 +67,18 @@ def generate_launch_description():
         cmd=['python3', odom_to_tf_script],
         output='screen',
         condition=IfCondition(LaunchConfiguration('odom_tf'))
+    )
+
+    # Robot State Publisher — publishes /robot_description for RViz RobotModel
+    with open(urdf_file, 'r') as f:
+        robot_desc = f.read()
+
+    robot_state_publisher = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        parameters=[{'robot_description': robot_desc, 'use_sim_time': True}],
+        output='screen'
     )
 
     # Static TF: base_footprint -> base_link (z=0.16 per SDF)
@@ -136,6 +149,7 @@ def generate_launch_description():
         gazebo,
         bridge,
         odom_to_tf,
+        robot_state_publisher,
         static_tf_footprint_to_base,
         static_tf_lidar,
         static_tf_camera,

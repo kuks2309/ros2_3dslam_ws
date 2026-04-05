@@ -20,11 +20,14 @@ from amr_interfaces.action import (
     AMRMotionTurn,
     AMRMotionTranslate,
     AMRMotionYawControl,
+    AMRMotionStanley,
 )
+from nav_msgs.msg import Path
+from geometry_msgs.msg import PoseStamped
 
 
 class MotionTestGUI(QMainWindow):
-    """Main window with 7 tabs: Connection, Status, and 5 action tests."""
+    """Main window with 8 tabs: Connection, Status, and 6 action tests."""
 
     def __init__(self):
         super().__init__()
@@ -73,6 +76,7 @@ class MotionTestGUI(QMainWindow):
         self._build_translate_tab()
         self._build_translate_reverse_tab()
         self._build_yaw_control_tab()
+        self._build_stanley_tab()
 
         # Connect bridge signals and start
         self.bridge.topic_hz_updated.connect(self._on_hz)
@@ -400,20 +404,179 @@ class MotionTestGUI(QMainWindow):
         ], goal, has_next_checkbox=True)
 
     def _build_yaw_control_tab(self):
-        def goal(w):
+        tab = QWidget()
+        vbox = QVBoxLayout(tab)
+
+        widgets = {}
+        params = [
+            ('Target Heading', 'target_heading',   0.0, -180.0, 180.0, 'deg'),
+            ('Max Speed',      'max_linear_speed',  0.2, 0.05,  0.4,  'm/s'),
+            ('Acceleration',   'acceleration',      0.2, 0.05,  1.5,  'm/s\u00b2'),
+            ('Deceleration',   'deceleration',      0.3, 0.05,  2.0,  'm/s\u00b2'),
+        ]
+        for label, name, default, lo, hi, unit in params:
+            h = QHBoxLayout()
+            h.addWidget(QLabel(f'{label} ({unit}):'))
+            sb = QDoubleSpinBox()
+            sb.setRange(lo, hi)
+            sb.setSingleStep(0.05)
+            sb.setDecimals(2)
+            sb.setValue(default)
+            widgets[name] = sb
+            h.addWidget(sb)
+            vbox.addLayout(h)
+
+        # Use Current Heading button
+        btn_cur = QPushButton('Use Current Heading')
+        btn_cur.clicked.connect(
+            lambda: widgets['target_heading'].setValue(self._pose[2]))
+        vbox.addWidget(btn_cur)
+
+        def goal_fn(w):
             g = AMRMotionYawControl.Goal()
-            g.start_x = w['start_x'].value()
-            g.start_y = w['start_y'].value()
-            g.end_x = w['end_x'].value()
-            g.end_y = w['end_y'].value()
+            g.target_heading = w['target_heading'].value()
             g.max_linear_speed = w['max_linear_speed'].value()
             g.acceleration = w['acceleration'].value()
+            g.deceleration = w['deceleration'].value()
             return g
 
-        self._make_pose_action_tab('YawControl', 'yaw_control', [
-            ('Max Speed',    'max_linear_speed', 0.2, 0.05, 0.4, 'm/s'),
-            ('Acceleration', 'acceleration',     0.2, 0.05, 1.5, 'm/s\u00b2'),
-        ], goal)
+        # Buttons: Send Goal | Stop (decel) | Cancel (immediate)
+        h = QHBoxLayout()
+        btn_send = QPushButton('Send Goal')
+        btn_send.setStyleSheet(
+            'background-color:#2196F3; color:white; padding:8px 16px;')
+        btn_send.clicked.connect(
+            lambda: self._send('yaw_control', widgets, goal_fn))
+        h.addWidget(btn_send)
+
+        btn_stop = QPushButton('Stop (\uac10\uc18d)')
+        btn_stop.setStyleSheet(
+            'background-color:#FF9800; color:white; padding:8px 16px;')
+        btn_stop.clicked.connect(self.bridge.stop_yaw_control)
+        h.addWidget(btn_stop)
+
+        btn_cancel = QPushButton('Cancel (\uc989\uc2dc)')
+        btn_cancel.setStyleSheet(
+            'background-color:#f44336; color:white; padding:8px 16px;')
+        btn_cancel.clicked.connect(self.bridge.cancel_goal)
+        h.addWidget(btn_cancel)
+        vbox.addLayout(h)
+
+        fb = QLabel('Feedback: --')
+        fb.setWordWrap(True)
+        vbox.addWidget(fb)
+        self._fb_labels['yaw_control'] = fb
+
+        res = QLabel('Result: --')
+        res.setWordWrap(True)
+        vbox.addWidget(res)
+        self._res_labels['yaw_control'] = res
+
+        vbox.addStretch()
+        self.tabs.addTab(tab, 'YawControl')
+
+    # ── Stanley Tab ────────────────────────────────────────────────────
+
+    def _build_stanley_tab(self):
+        tab = QWidget()
+        vbox = QVBoxLayout(tab)
+        widgets = {}
+
+        # Waypoint table
+        grp = QGroupBox('Waypoint Path (map frame)')
+        gv = QVBoxLayout()
+
+        wp_table = QTableWidget(0, 2)
+        wp_table.setHorizontalHeaderLabels(['X (m)', 'Y (m)'])
+        wp_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        wp_table.setMinimumHeight(140)
+        widgets['wp_table'] = wp_table
+        gv.addWidget(wp_table)
+
+        btn_row = QHBoxLayout()
+        btn_add = QPushButton('Add WP')
+        btn_add.clicked.connect(lambda: self._stanley_add_wp(wp_table, 0.0, 0.0))
+        btn_row.addWidget(btn_add)
+
+        btn_cur = QPushButton('Add Current Pose')
+        btn_cur.clicked.connect(
+            lambda: self._stanley_add_wp(wp_table, self._pose[0], self._pose[1]))
+        btn_row.addWidget(btn_cur)
+
+        btn_rm = QPushButton('Remove Selected')
+        btn_rm.clicked.connect(lambda: wp_table.removeRow(wp_table.currentRow()))
+        btn_row.addWidget(btn_rm)
+
+        btn_clr = QPushButton('Clear')
+        btn_clr.clicked.connect(lambda: wp_table.setRowCount(0))
+        btn_row.addWidget(btn_clr)
+
+        gv.addLayout(btn_row)
+        grp.setLayout(gv)
+        vbox.addWidget(grp)
+
+        # Controller parameters
+        form = QFormLayout()
+        params = [
+            ('K Stanley',       'k_stanley',        2.0,  0.1,  10.0, ''),
+            ('K Soft',          'k_soft',            0.8,  0.01,  5.0, ''),
+            ('Max Speed',       'max_linear_speed',  0.3,  0.05,  0.5, 'm/s'),
+            ('Acceleration',    'acceleration',      0.2,  0.05,  1.0, 'm/s\u00b2'),
+            ('Goal Tolerance',  'goal_tolerance',    0.10, 0.01,  1.0, 'm'),
+        ]
+        for label, name, default, lo, hi, unit in params:
+            sb = QDoubleSpinBox()
+            sb.setRange(lo, hi)
+            sb.setSingleStep(0.1 if hi > 1.0 else 0.01)
+            sb.setDecimals(2)
+            sb.setValue(default)
+            if unit:
+                sb.setSuffix(f' {unit}')
+            widgets[name] = sb
+            form.addRow(f'{label}:', sb)
+
+        cb = QCheckBox('Align Final Heading')
+        cb.setChecked(False)
+        widgets['align_final_heading'] = cb
+        form.addRow(cb)
+        vbox.addLayout(form)
+
+        def goal_fn(w):
+            table = w['wp_table']
+            path = Path()
+            path.header.frame_id = 'map'
+            for row in range(table.rowCount()):
+                x_item = table.item(row, 0)
+                y_item = table.item(row, 1)
+                if x_item is None or y_item is None:
+                    continue
+                ps = PoseStamped()
+                ps.header.frame_id = 'map'
+                ps.pose.position.x = float(x_item.text())
+                ps.pose.position.y = float(y_item.text())
+                ps.pose.orientation.w = 1.0
+                path.poses.append(ps)
+
+            g = AMRMotionStanley.Goal()
+            g.path = path
+            g.max_linear_speed = w['max_linear_speed'].value()
+            g.acceleration = w['acceleration'].value()
+            g.k_stanley = w['k_stanley'].value()
+            g.k_soft = w['k_soft'].value()
+            g.goal_tolerance = w['goal_tolerance'].value()
+            g.align_final_heading = w['align_final_heading'].isChecked()
+            return g
+
+        self._add_action_buttons(vbox, 'stanley', widgets, goal_fn)
+        vbox.addStretch()
+        self.tabs.addTab(tab, 'Stanley')
+
+    @staticmethod
+    def _stanley_add_wp(table, x, y):
+        row = table.rowCount()
+        table.insertRow(row)
+        table.setItem(row, 0, QTableWidgetItem(f'{x:.3f}'))
+        table.setItem(row, 1, QTableWidgetItem(f'{y:.3f}'))
 
     # ── E-STOP & Logging ──────────────────────────────────────────────
 

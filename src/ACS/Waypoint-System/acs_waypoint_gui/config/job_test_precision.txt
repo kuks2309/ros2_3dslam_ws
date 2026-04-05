@@ -1,0 +1,21 @@
+# ACS Precision / Slow-Speed Grid Test
+# Purpose: Test fine positioning accuracy at low speed (0.15 m/s)
+# Path: 3x2 grid (0,0)->(1,0)->(2,0)->(2,1)->(1,1)->(0,1)->(0,2)
+# Format: Type  X(m)  Y(m)  Yaw(deg)  Timeout(sec)  DriveMode  TurnRadius  Speed
+# Note: WAIT at (2,0) requires a preceding AUTO move to reach (2,0) first
+
+# --- Grid row 1 (east) ---
+AMR  1.0  0.0  0.0   60  AUTO  0.0  0.15
+AMR  2.0  0.0  0.0   60  AUTO  0.0  0.15
+# WAIT 2s at midpoint (2,0) — precision stop simulation
+AMR  2.0  0.0  0.0   10  WAIT  0.0  2.0
+
+# --- Turn north ---
+AMR  2.0  1.0  90.0  60  AUTO  0.0  0.15
+
+# --- Grid row 2 (west) ---
+AMR  1.0  1.0  180.0 60  AUTO  0.0  0.15
+AMR  0.0  1.0  180.0 60  AUTO  0.0  0.15
+
+# --- Turn north to finish ---
+AMR  0.0  2.0  90.0  60  AUTO  0.0  0.15

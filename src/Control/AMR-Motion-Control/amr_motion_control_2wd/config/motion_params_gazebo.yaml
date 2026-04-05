@@ -84,3 +84,38 @@ amr_motion_control_2wd:
     # Gazebo DiffDrive velocity limits (for reference/clamping)
     # max_linear_velocity: 0.4 m/s
     # max_angular_velocity: 1.0 rad/s (57.3 deg/s)
+
+    # ── PurePursuit parameters ──
+    pure_pursuit_ctrl_freq_hz: 50.0
+    pure_pursuit_default_lookahead_distance: 0.5
+    pure_pursuit_min_lookahead_distance: 0.2
+    pure_pursuit_max_lookahead_distance: 2.0
+    pure_pursuit_default_goal_tolerance: 0.10
+    pure_pursuit_max_omega: 1.0
+    pure_pursuit_max_timeout_sec: 120.0
+    pure_pursuit_Kp_heading: 1.5
+    pure_pursuit_Kd_heading: 0.3
+    pure_pursuit_lateral_abort_dist: 1.0
+    pure_pursuit_min_vx: 0.02
+    pure_pursuit_watchdog_timeout_sec: 2.0
+    pure_pursuit_watchdog_jump_threshold: 0.5
+    pure_pursuit_watchdog_velocity_margin: 1.3
+    pure_pursuit_pose_topic: "/rtabmap/odom"
+    pure_pursuit_enable_localization_watchdog: true
+
+    # ── Stanley Path Following ────────────────────────────────────────
+    stanley_ctrl_freq_hz: 50.0
+    stanley_default_K_stanley: 2.0
+    stanley_default_K_soft: 0.8
+    stanley_default_goal_tolerance: 0.10
+    stanley_max_omega: 1.0
+    stanley_max_timeout_sec: 120.0
+    stanley_Kp_heading: 1.5
+    stanley_Kd_heading: 0.3
+    stanley_lateral_abort_dist: 1.0
+    stanley_min_vx: 0.02
+    stanley_watchdog_timeout_sec: 2.0
+    stanley_watchdog_jump_threshold: 0.5
+    stanley_watchdog_velocity_margin: 1.3
+    stanley_pose_topic: "/rtabmap/odom"
+    stanley_enable_localization_watchdog: true

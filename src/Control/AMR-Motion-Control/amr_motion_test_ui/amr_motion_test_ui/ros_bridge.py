@@ -20,11 +20,14 @@ from sensor_msgs.msg import PointCloud2, Imu, Image
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 
+from std_srvs.srv import Trigger
+
 from amr_interfaces.action import (
     AMRMotionSpin,
     AMRMotionTurn,
     AMRMotionTranslate,
     AMRMotionYawControl,
+    AMRMotionStanley,
 )
 
 # Topics to monitor: topic -> (msg_class, label, use_sensor_qos)
@@ -44,9 +47,11 @@ ACTION_SERVERS = {
     'translate':         ('amr_motion_translate',   AMRMotionTranslate),
     'translate_reverse': ('amr_translate_reverse_action', AMRMotionTranslate),
     'yaw_control':       ('amr_motion_yaw_control', AMRMotionYawControl),
+    'stanley':           ('amr_motion_stanley',     AMRMotionStanley),
 }
 
 PHASE_NAMES = {0: 'WAIT', 1: 'ACCEL', 2: 'CRUISE', 3: 'DECEL'}
+STANLEY_PHASE_NAMES = {0: 'WAIT_POSE', 1: 'INIT', 2: 'TRACKING', 3: 'FINAL_ALIGN'}
 STATUS_DESC = {
     0: 'success', -1: 'cancelled', -2: 'invalid_param',
     -3: 'timeout', -4: 'tf_fail',
@@ -75,6 +80,7 @@ class RosBridge(QThread):
         self._action_clients: Dict[str, ActionClient] = {}
         self._active_goal_handle = None
         self._cmd_vel_pub = None
+        self._yaw_stop_cli = None
         self._topic_stamps: Dict[str, deque] = {
             t: deque(maxlen=50) for t in MONITORED_TOPICS
         }
@@ -110,6 +116,10 @@ class RosBridge(QThread):
             for key, (srv_name, action_type) in ACTION_SERVERS.items():
                 self._action_clients[key] = ActionClient(
                     self._node, action_type, srv_name)
+
+            # YawControl stop service client
+            self._yaw_stop_cli = self._node.create_client(
+                Trigger, '/yaw_control_stop')
 
             self.log_message.emit(f'ROS bridge ready ({len(self._action_clients)} actions)')
 
@@ -185,6 +195,25 @@ class RosBridge(QThread):
         if self._cmd_vel_pub:
             self._cmd_vel_pub.publish(Twist())
 
+    def stop_yaw_control(self):
+        """Call /yaw_control_stop service for graceful deceleration."""
+        if self._yaw_stop_cli is None:
+            self.log_message.emit('[ERROR] YawControl stop client not ready')
+            return
+        if not self._yaw_stop_cli.service_is_ready():
+            self.log_message.emit('[ERROR] /yaw_control_stop service not available')
+            return
+        req = Trigger.Request()
+        future = self._yaw_stop_cli.call_async(req)
+        future.add_done_callback(self._on_yaw_stop_response)
+
+    def _on_yaw_stop_response(self, future):
+        try:
+            res = future.result()
+            self.log_message.emit(f'[yaw_control] Stop: {res.message}')
+        except Exception as e:
+            self.log_message.emit(f'[yaw_control] Stop failed: {e}')
+
     # ── Action callbacks ──────────────────────────────────────────────
 
     def _on_goal_response(self, key, future):
@@ -220,10 +249,18 @@ class RosBridge(QThread):
                    f'hdg={fb.current_heading_error:.1f}\u00b0 '
                    f'vx={fb.current_vx:.3f}m/s phase={phase}')
         elif key == 'yaw_control':
-            txt = (f'dist={fb.current_distance:.3f}m '
-                   f'hdg={fb.current_heading_error:.1f}\u00b0 '
+            txt = (f'hdg_err={fb.current_heading_error:.1f}\u00b0 '
                    f'vx={fb.current_vx:.3f}m/s '
-                   f'\u03c9={fb.current_omega:.4f}rad/s phase={phase}')
+                   f'\u03c9={fb.current_omega:.3f}rad/s phase={phase}')
+        elif key == 'stanley':
+            sp = STANLEY_PHASE_NAMES.get(getattr(fb, 'phase', 0), '?')
+            txt = (f'dist={fb.current_distance:.2f}m '
+                   f'rem={fb.remaining_distance:.2f}m '
+                   f'CTE={fb.cross_track_error:.3f}m '
+                   f'hdg={fb.heading_error:.1f}\u00b0\n'
+                   f'v={fb.current_speed:.2f}m/s '
+                   f'WP={fb.current_waypoint_index}/{fb.total_waypoints} '
+                   f'phase={sp}')
         else:
             txt = str(fb)
         self.action_feedback.emit(key, txt)
@@ -242,6 +279,14 @@ class RosBridge(QThread):
                    f'time={r.elapsed_time:.2f}s')
         elif key == 'turn':
             txt = (f'{s}  angle={r.actual_angle:.2f}\u00b0 '
+                   f'time={r.elapsed_time:.2f}s')
+        elif key == 'yaw_control':
+            txt = (f'{s}  dist={r.total_distance:.3f}m '
+                   f'hdg={r.final_heading_error:.2f}\u00b0 '
+                   f'time={r.elapsed_time:.2f}s')
+        elif key == 'stanley':
+            txt = (f'{s}  dist={r.actual_distance:.3f}m '
+                   f'CTE={r.final_cross_track_error:.4f}m '
                    f'time={r.elapsed_time:.2f}s')
         else:
             txt = (f'{s}  dist={r.actual_distance:.3f}m '

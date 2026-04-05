@@ -26,10 +26,10 @@ amr_motion_control_2wd:
     fine_correction_timeout_sec: 5.0
     settling_delay_ms: 300
 
-    # Translate parameters
-    translate_Kp_heading: 1.0
-    translate_Kd_heading: 0.3
-    translate_K_stanley: 2.0
+    # Translate parameters (tuned for Gazebo stability)
+    translate_Kp_heading: 0.3
+    translate_Kd_heading: 0.05
+    translate_K_stanley: 0.5
     translate_K_soft: 1.0
     translate_max_omega: 1.0
     translate_alpha_max: 0.5
@@ -47,8 +47,15 @@ amr_motion_control_2wd:
     translate_walk_accel_limit: 0.5
     translate_walk_decel_limit: 1.0
 
+    # Stanley softening: prevents huge corrections at low speed (atan2(K*e_lat, v+soft))
+    # Default 0.3 causes 27° correction at v=0.02m/s with e_lat=0.083 → oscillation
+    stanley_softening: 2.0
+    # Lateral abort limit: 0.8m default is too strict for Gazebo (position errors ~0.1m)
+    lateral_recover_dist_m: 2.0
+
     # FIX: Use correct parameter name matching C++ code (max_omega_rad_s, not translate_max_omega)
-    max_omega_rad_s: 0.8
+    # Reduced to 0.4 to prevent heading oscillation in Gazebo
+    max_omega_rad_s: 0.4
 
     # NO-SLAM: Pose topic = Gazebo ground-truth odometry
     translate_pose_topic: "/odom"

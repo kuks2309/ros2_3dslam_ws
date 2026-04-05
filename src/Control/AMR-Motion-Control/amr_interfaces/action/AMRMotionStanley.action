@@ -1,9 +1,10 @@
-# AMRMotionPurePursuit — Path following via Pure Pursuit
+# AMRMotionStanley — Path following via Stanley controller
 # Goal
 nav_msgs/Path path               # waypoint path to follow (map frame)
 float64 max_linear_speed         # m/s (max 0.4 for Gazebo)
 float64 acceleration             # m/s²
-float64 lookahead_distance       # m
+float64 k_stanley                # Stanley lateral gain (default: 2.0)
+float64 k_soft                   # Stanley softening gain (default: 0.8)
 float64 goal_tolerance           # m
 bool    align_final_heading      # align to last waypoint yaw
 ---
@@ -21,4 +22,4 @@ float64 heading_error
 float64 current_speed
 uint32  current_waypoint_index
 uint32  total_waypoints
-uint8   phase                    # 0=wait_path, 1=initializing, 2=tracking, 3=final_align
+uint8   phase                    # 0=wait_pose, 1=initializing, 2=tracking, 3=final_align
