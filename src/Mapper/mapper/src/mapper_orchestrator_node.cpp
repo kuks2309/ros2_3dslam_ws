@@ -188,19 +188,23 @@ void MapperOrchestratorNode::handle_command(
         slam_req->map_name       = req->map_name;
         slam_req->save_directory = req->save_directory;
 
-        auto done    = std::make_shared<std::atomic<bool>>(false);
-        auto suc     = std::make_shared<std::atomic<bool>>(false);
-        auto saved   = std::make_shared<std::string>();
-        std::mutex   saved_mtx;
+        auto done      = std::make_shared<std::atomic<bool>>(false);
+        auto suc       = std::make_shared<std::atomic<bool>>(false);
+        auto saved     = std::make_shared<std::string>();
+        auto saved_mtx = std::make_shared<std::mutex>();
 
         slam_client->async_send_request(slam_req,
-            [done, suc, saved, &saved_mtx]
+            [done, suc, saved, saved_mtx]
             (rclcpp::Client<SlamCtrl>::SharedFuture fut) {
-                auto r = fut.get();
-                suc->store(r->success);
-                {
-                    std::lock_guard<std::mutex> lk(saved_mtx);
+                try {
+                    auto r = fut.get();
+                    suc->store(r->success);
+                    std::lock_guard<std::mutex> lk(*saved_mtx);
                     *saved = r->saved_path;
+                } catch (const std::exception & e) {
+                    suc->store(false);
+                    std::lock_guard<std::mutex> lk(*saved_mtx);
+                    *saved = std::string("Error: ") + e.what();
                 }
                 done->store(true);
             });
@@ -216,7 +220,7 @@ void MapperOrchestratorNode::handle_command(
         }
         res->success = suc->load();
         {
-            std::lock_guard<std::mutex> lk(saved_mtx);
+            std::lock_guard<std::mutex> lk(*saved_mtx);
             res->message = res->success ?
                 ("Map saved to: " + *saved) : "Map save failed";
             if (res->success) log("Map saved: " + *saved);
