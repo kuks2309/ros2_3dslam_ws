@@ -10,6 +10,7 @@
 #include <atomic>
 #include <mutex>
 #include <thread>
+#include <functional>
 
 namespace mapper {
 
@@ -31,6 +32,7 @@ class MapperOrchestratorNode : public rclcpp::Node {
 public:
     explicit MapperOrchestratorNode(
         const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+    ~MapperOrchestratorNode();
 
     MapperState get_state() const { return state_.load(); }
 
@@ -85,6 +87,11 @@ private:
 
     void publish_status();
     void log(const std::string & msg);
+
+    // thread lifetime management
+    std::atomic<bool> shutdown_requested_{false};
+    std::atomic<int>  active_workers_{0};
+    void launch_worker(std::function<void()> fn);
 
     // LOCK ORDERING: state_mutex_ -> log_mutex_ (never reverse)
     mutable std::mutex log_mutex_;

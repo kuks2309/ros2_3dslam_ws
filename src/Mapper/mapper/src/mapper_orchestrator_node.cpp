@@ -46,6 +46,24 @@ MapperOrchestratorNode::MapperOrchestratorNode(
         std::bind(&MapperOrchestratorNode::publish_status, this));
 }
 
+MapperOrchestratorNode::~MapperOrchestratorNode() {
+    shutdown_requested_.store(true);
+    transition_to(MapperState::IDLE);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (active_workers_.load() > 0 &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+}
+
+void MapperOrchestratorNode::launch_worker(std::function<void()> fn) {
+    active_workers_.fetch_add(1);
+    std::thread([this, fn = std::move(fn)] {
+        fn();
+        active_workers_.fetch_sub(1);
+    }).detach();
+}
+
 // H4: 내부 버전 (이미 mutex를 잡은 경우)
 void MapperOrchestratorNode::transition_to_unlocked(MapperState new_state) {
     auto old_state = state_.load();
@@ -97,7 +115,7 @@ void MapperOrchestratorNode::handle_command(
             drive_mode_.store(req->drive_mode);
             align_retry_count_.store(0);
             transition_to_unlocked(MapperState::ALIGNING);  // H4: 이미 mutex 보유
-            std::thread([self]{ self->run_aligning(); }).detach();
+            launch_worker([self]{ self->run_aligning(); });
             res->success = true;
             res->message = "Mapping started";
         } else {
@@ -123,9 +141,9 @@ void MapperOrchestratorNode::handle_command(
             auto prev = previous_state_.load();
             transition_to_unlocked(prev);  // H4
             if (prev == MapperState::MAPPING_MANUAL)
-                std::thread([self]{ self->run_mapping_manual(); }).detach();
+                launch_worker([self]{ self->run_mapping_manual(); });
             else if (prev == MapperState::EXPLORING_UNKNOWN)
-                std::thread([self]{ self->run_exploring(); }).detach();
+                launch_worker([self]{ self->run_exploring(); });
             res->success = true;
             res->message = "Resumed";
         } else {
@@ -146,7 +164,7 @@ void MapperOrchestratorNode::handle_command(
     case Cmd::CMD_EXPLORE:
         if (state == MapperState::MAPPING_MANUAL) {
             transition_to_unlocked(MapperState::EXPLORING_UNKNOWN);  // H4
-            std::thread([self]{ self->run_exploring(); }).detach();
+            launch_worker([self]{ self->run_exploring(); });
             res->success = true;
             res->message = "Exploration started";
         } else {
@@ -167,7 +185,7 @@ void MapperOrchestratorNode::handle_command(
 }
 
 void MapperOrchestratorNode::run_aligning() {
-    if (state_.load() == MapperState::IDLE) return;
+    if (state_.load() == MapperState::IDLE || shutdown_requested_.load()) return;
 
     // Poll for action server with early exit on IDLE/stop
     bool server_ready = false;
@@ -224,7 +242,7 @@ void MapperOrchestratorNode::run_aligning() {
 }
 
 void MapperOrchestratorNode::run_starting_slam() {
-    if (state_.load() == MapperState::IDLE) return;
+    if (state_.load() == MapperState::IDLE || shutdown_requested_.load()) return;
 
     // C2: slam_mode_에 따라 적절한 클라이언트 선택
     auto& slam_client = (slam_mode_.load() == 0) ? slam_ctrl_client_2d_ : slam_ctrl_client_3d_;
@@ -284,7 +302,7 @@ void MapperOrchestratorNode::run_starting_slam() {
 }
 
 void MapperOrchestratorNode::run_verifying_map() {
-    if (state_.load() == MapperState::IDLE) return;
+    if (state_.load() == MapperState::IDLE || shutdown_requested_.load()) return;
 
     bool server_ready = false;
     for (int i = 0; i < 50 && rclcpp::ok(); ++i) {
@@ -342,7 +360,7 @@ void MapperOrchestratorNode::run_mapping_manual() {
 }
 
 void MapperOrchestratorNode::run_exploring() {
-    if (state_.load() == MapperState::IDLE) return;
+    if (state_.load() == MapperState::IDLE || shutdown_requested_.load()) return;
 
     bool server_ready = false;
     for (int i = 0; i < 50 && rclcpp::ok(); ++i) {
@@ -396,6 +414,7 @@ void MapperOrchestratorNode::run_exploring() {
 }
 
 void MapperOrchestratorNode::run_loop_closing() {
+    if (state_.load() == MapperState::IDLE || shutdown_requested_.load()) return;
     log("Waiting for loop closure...");
     auto start = std::chrono::steady_clock::now();
     while (rclcpp::ok() && state_.load() != MapperState::IDLE) {
