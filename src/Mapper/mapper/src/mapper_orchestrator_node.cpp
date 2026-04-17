@@ -174,10 +174,55 @@ void MapperOrchestratorNode::handle_command(
         }
         break;
 
-    case Cmd::CMD_SAVE_MAP:
-        res->success = false;
-        res->message = "CMD_SAVE_MAP not yet implemented";
+    case Cmd::CMD_SAVE_MAP: {
+        auto & slam_client = (slam_mode_.load() == 0) ?
+            slam_ctrl_client_2d_ : slam_ctrl_client_3d_;
+        if (!slam_client->service_is_ready()) {
+            res->success = false;
+            res->message = "SLAM service not ready";
+            break;
+        }
+        using SlamCtrl = mapper_interfaces::srv::SlamControl;
+        auto slam_req = std::make_shared<SlamCtrl::Request>();
+        slam_req->command        = SlamCtrl::Request::CMD_SAVE_MAP;
+        slam_req->map_name       = req->map_name;
+        slam_req->save_directory = req->save_directory;
+
+        auto done    = std::make_shared<std::atomic<bool>>(false);
+        auto suc     = std::make_shared<std::atomic<bool>>(false);
+        auto saved   = std::make_shared<std::string>();
+        std::mutex   saved_mtx;
+
+        slam_client->async_send_request(slam_req,
+            [done, suc, saved, &saved_mtx]
+            (rclcpp::Client<SlamCtrl>::SharedFuture fut) {
+                auto r = fut.get();
+                suc->store(r->success);
+                {
+                    std::lock_guard<std::mutex> lk(saved_mtx);
+                    *saved = r->saved_path;
+                }
+                done->store(true);
+            });
+
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (!done->load() && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        if (!done->load()) {
+            res->success = false;
+            res->message = "Save map timeout";
+            break;
+        }
+        res->success = suc->load();
+        {
+            std::lock_guard<std::mutex> lk(saved_mtx);
+            res->message = res->success ?
+                ("Map saved to: " + *saved) : "Map save failed";
+            if (res->success) log("Map saved: " + *saved);
+        }
         break;
+    }
 
     default:
         res->success = false;
