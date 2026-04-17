@@ -62,7 +62,7 @@ TEST_F(OrchestratorTest, PauseRejectsWhenIdle) {
     // Autonomous mapping cannot be paused mid-run; use CMD_STOP instead.
 }
 
-TEST_F(OrchestratorTest, SaveMapReturnsNotImplemented) {
+TEST_F(OrchestratorTest, SaveMapFailsWhenSlamServiceNotReady) {
     auto node = std::make_shared<mapper::MapperOrchestratorNode>();
 
     auto req = std::make_shared<mapper_interfaces::srv::MapperCommand::Request>();
@@ -71,5 +71,5 @@ TEST_F(OrchestratorTest, SaveMapReturnsNotImplemented) {
     node->handle_command_public(req, res);
 
     EXPECT_FALSE(res->success);
-    EXPECT_NE(res->message.find("not yet implemented"), std::string::npos);
+    EXPECT_NE(res->message.find("SLAM service not ready"), std::string::npos);
 }
