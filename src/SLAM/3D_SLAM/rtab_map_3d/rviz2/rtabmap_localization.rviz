@@ -8,9 +8,9 @@ Panels:
         - /CloudMap1
         - /TF1
         - /PoseWithCovariance1
-        - /LaserScan1
+        - /Odometry Trail1
       Splitter Ratio: 0.5
-    Tree Height: 234
+    Tree Height: 356
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -58,17 +58,58 @@ Visualization Manager:
         Value: /rtabmap/map_updates
       Use Timestamp: false
       Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: CollisionMarker
+      Namespaces:
+        {}
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /global_planner/collision_marker
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 25; 255; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.05000000074505806
+      Name: GlobalPath
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: Arrows
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /global_path
+      Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
+        Max Value: 6.832753658294678
+        Min Value: -0.44926804304122925
         Value: true
       Axis: Z
       Channel Name: rgb
       Class: rviz_default_plugins/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: RGB8
+      Color Transformer: AxisColor
       Decay Time: 0
       Enabled: true
       Invert Rainbow: false
@@ -97,6 +138,8 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
+        base_footprint:
+          Value: true
         base_link:
           Value: true
         camera_color_optical_frame:
@@ -107,7 +150,7 @@ Visualization Manager:
           Value: true
         map:
           Value: true
-        odom:
+        odom_rtabmap:
           Value: true
       Marker Scale: 0.5
       Name: TF
@@ -116,13 +159,14 @@ Visualization Manager:
       Show Names: true
       Tree:
         map:
-          odom:
-            base_link:
-              camera_link:
-                camera_color_optical_frame:
+          odom_rtabmap:
+            base_footprint:
+              base_link:
+                camera_link:
+                  camera_color_optical_frame:
+                    {}
+                lidar_link:
                   {}
-              lidar_link:
-                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -144,7 +188,7 @@ Visualization Manager:
           Color: 0; 255; 0
           Scale: 1
           Value: true
-        Value: true
+        Value: false
       Enabled: true
       Head Length: 0.10000000149011612
       Head Radius: 0.15000000596046448
@@ -176,7 +220,7 @@ Visualization Manager:
           Color: 204; 51; 204
           Scale: 1
           Value: true
-        Value: true
+        Value: false
       Enabled: true
       Keep: 100
       Name: Odometry Trail
@@ -200,7 +244,7 @@ Visualization Manager:
         Value: /rtabmap/odom
       Value: true
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -212,7 +256,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /camera/color/image_raw
-      Value: true
+      Value: false
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -280,25 +324,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 15.814837455749512
+      Distance: 26.300111770629883
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 2.456477642059326
-        Y: -1.2856348752975464
-        Z: -0.7788055539131165
+        X: 13.579779624938965
+        Y: -9.355993270874023
+        Z: 0.6703693270683289
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.7200000286102295
+      Pitch: 1.1899995803833008
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 3.643174171447754
+      Yaw: 3.8181774616241455
     Saved: ~
 Window Geometry:
   Displays:
@@ -306,11 +350,11 @@ Window Geometry:
   Height: 900
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000001cb0000032afc0200000004fb000000100044006900730070006c006100790073010000003d0000016d000000c900fffffffb0000000a0056006900650077007301000001b0000000ed000000a400fffffffb0000000a0049006d00610067006501000002c0000000c00000000000000000fb0000001200520047004200200049006d00610067006501000002a3000000c40000002800ffffff000003a70000032a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000001cb0000032afc0200000004fb000000100044006900730070006c006100790073010000003d000001e7000000c900fffffffb0000000a00560069006500770073010000022a0000013d000000a400fffffffb0000000a0049006d00610067006501000002c0000000c00000000000000000fb0000001200520047004200200049006d00610067006500000002a3000000c40000002800ffffff000003a70000032a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   RGB Image:
     collapsed: false
   Views:
     collapsed: false
   Width: 1400
-  X: 100
-  Y: 100
+  X: 520
+  Y: 84
