@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>wall_detector</name>
+  <version>0.1.0</version>
+  <description>Hough 변환 기반 LiDAR 최장 벽 탐지 노드</description>
+  <maintainer email="dev@example.com">dev</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>mapper_interfaces</depend>
+  <depend>libopencv-dev</depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
