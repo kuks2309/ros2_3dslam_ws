@@ -18,13 +18,9 @@ MapperOrchestratorNode::MapperOrchestratorNode(
     status_pub_ = create_publisher<mapper_interfaces::msg::MapperStatus>(
         "mapper/status", rclcpp::QoS(10).reliable());
 
-    auto cb_group = create_callback_group(
-        rclcpp::CallbackGroupType::MutuallyExclusive);
-
     cmd_service_ = create_service<mapper_interfaces::srv::MapperCommand>(
         "mapper/command",
-        std::bind(&MapperOrchestratorNode::handle_command, this, _1, _2),
-        rmw_qos_profile_services_default, cb_group);
+        std::bind(&MapperOrchestratorNode::handle_command, this, _1, _2));
 
     wall_align_client_ = rclcpp_action::create_client<
         mapper_interfaces::action::WallAlign>(this, "wall_align");
@@ -295,14 +291,21 @@ void MapperOrchestratorNode::run_aligning() {
 
     if (state_.load() == MapperState::IDLE) return;
 
-    if (result_status->load() == 0) {
+    int8_t status = result_status->load();
+    if (status == 0) {
         align_retry_count_.store(0);  // H3: atomic store
         transition_to(MapperState::STARTING_SLAM);
         run_starting_slam();
+    } else if (status == -4) {
+        // NO_WALL_DATA — wall_detector 미동작/탐지 실패. 재시도 무의미.
+        log("Wall detector unavailable (status=-4) — going to ERROR");
+        transition_to(MapperState::ERROR);
     } else {
+        // -1 (ABORT), -3 (CANCEL) 등 일반 실패 — 재시도
         align_retry_count_.fetch_add(1);  // H3: atomic
         if (align_retry_count_.load() >= max_align_retries_) {
-            log("Alignment failed after max retries");
+            log("Alignment failed after max retries (last_status=" +
+                std::to_string(status) + ")");
             transition_to(MapperState::ERROR);
         } else {
             run_aligning();
