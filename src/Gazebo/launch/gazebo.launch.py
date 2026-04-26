@@ -1,9 +1,17 @@
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable, ExecuteProcess
+from launch.actions import (
+    DeclareLaunchArgument,
+    SetEnvironmentVariable,
+    ExecuteProcess,
+    RegisterEventHandler,
+)
+from launch.event_handlers import OnShutdown
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
 from launch_ros.actions import Node
+
+from launch_utils import setup_gpu_offload
 
 
 def generate_launch_description():
@@ -41,7 +49,9 @@ def generate_launch_description():
     )
 
     # ROS-Gazebo Bridge
-    # Bridge: cmd_vel (ROS2→Gazebo), clock/odom/scan/camera (Gazebo→ROS2)
+    # Bridge: cmd_vel (ROS2→Gazebo), clock/odom/scan/camera/joint_state (Gazebo→ROS2)
+    # joint_state: SDF의 ignition-gazebo-joint-state-publisher-system 플러그인이
+    #              /world/my_world/model/robot_scan/joint_state로 발행 → /joint_states로 리맵
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -57,6 +67,10 @@ def generate_launch_description():
             '/camera/depth/camera_info@sensor_msgs/msg/CameraInfo[ignition.msgs.CameraInfo',
             '/camera/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked',
             '/imu/data@sensor_msgs/msg/Imu[ignition.msgs.IMU',
+            '/world/my_world/model/robot_scan/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model',
+        ],
+        remappings=[
+            ('/world/my_world/model/robot_scan/joint_state', '/joint_states'),
         ],
         output='screen'
     )
@@ -81,47 +95,10 @@ def generate_launch_description():
         output='screen'
     )
 
-    # Static TF: base_footprint -> base_link (z=0.16 per SDF)
-    static_tf_footprint_to_base = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_footprint_to_base',
-        arguments=['0', '0', '0.16', '0', '0', '0', 'base_footprint', 'base_link'],
-        parameters=[{'use_sim_time': True}],
-        output='screen'
-    )
-
-    # Static TF: base_link -> lidar_link (lidar is 0.19m above base_link per SDF)
-    static_tf_lidar = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_base_to_lidar',
-        arguments=['0', '0', '0.19', '0', '0', '0', 'base_link', 'lidar_link'],
-        parameters=[{'use_sim_time': True}],
-        output='screen'
-    )
-
-    # Static TF: base_link -> camera_link (camera is 0.25m forward, 0.10m up from base_link)
-    static_tf_camera = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_base_to_camera',
-        arguments=['0.25', '0', '0.10', '0', '0', '0', 'base_link', 'camera_link'],
-        parameters=[{'use_sim_time': True}],
-        output='screen'
-    )
-
-    # Static TF: camera_link -> camera_color_optical_frame
-    # Converts from ROS convention (X forward) to optical convention (Z forward)
-    # Roll=-90deg, Pitch=0, Yaw=-90deg
-    static_tf_camera_optical = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_camera_to_optical',
-        arguments=['0', '0', '0', '-1.5708', '0', '-1.5708', 'camera_link', 'camera_color_optical_frame'],
-        parameters=[{'use_sim_time': True}],
-        output='screen'
-    )
+    # NOTE: /joint_states 는 ros_gz_bridge 가 Gazebo SDF의 JointStatePublisher 플러그인
+    # 토픽(/world/my_world/model/robot_scan/joint_state)을 리맵해 발행한다.
+    # robot_state_publisher 가 이를 구독해 wheel link TF (continuous joint)를 생성.
+    # 별도 joint_state_publisher 노드 불필요.
 
     # RViz2
     rviz = Node(
@@ -134,15 +111,29 @@ def generate_launch_description():
     )
 
     # rqt_robot_steering for manual control
+    # Qt 이벤트 루프가 SIGINT를 가로채므로 짧은 timeout + OnShutdown 훅으로 강제 종료 보장
     rqt_steering = Node(
         package='rqt_robot_steering',
         executable='rqt_robot_steering',
         name='rqt_robot_steering',
         parameters=[{'use_sim_time': True}],
-        output='screen'
+        output='screen',
+        sigterm_timeout='2',
+        sigkill_timeout='3',
+    )
+
+    # launch 종료 시 rqt_robot_steering 프로세스가 Qt 트랩으로 남는 경우 pkill로 강제 정리
+    rqt_cleanup_on_shutdown = RegisterEventHandler(
+        OnShutdown(on_shutdown=[
+            ExecuteProcess(
+                cmd=['pkill', '-f', 'rqt_robot_steering'],
+                shell=False,
+            ),
+        ]),
     )
 
     return LaunchDescription([
+        *setup_gpu_offload(),
         set_gz_resource_path,
         world_arg,
         odom_tf_arg,
@@ -150,10 +141,7 @@ def generate_launch_description():
         bridge,
         odom_to_tf,
         robot_state_publisher,
-        static_tf_footprint_to_base,
-        static_tf_lidar,
-        static_tf_camera,
-        static_tf_camera_optical,
         rviz,
         rqt_steering,
+        rqt_cleanup_on_shutdown,
     ])
