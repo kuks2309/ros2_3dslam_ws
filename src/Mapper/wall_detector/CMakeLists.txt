@@ -11,6 +11,7 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(mapper_interfaces REQUIRED)
 find_package(OpenCV REQUIRED)
 
@@ -19,6 +20,7 @@ set(DEPS
   sensor_msgs
   geometry_msgs
   std_msgs
+  visualization_msgs
   mapper_interfaces)
 
 # 라이브러리 (테스트·재사용)

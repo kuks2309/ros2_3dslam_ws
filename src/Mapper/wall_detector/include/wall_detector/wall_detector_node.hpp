@@ -2,6 +2,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <mapper_interfaces/msg/longest_wall.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 #include <opencv2/opencv.hpp>
 #include <mutex>
 
@@ -30,6 +31,7 @@ private:
     // Subscription / Publisher
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     rclcpp::Publisher<mapper_interfaces::msg::LongestWall>::SharedPtr wall_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
     rclcpp::TimerBase::SharedPtr pub_timer_;
 
     sensor_msgs::msg::LaserScan::SharedPtr latest_scan_;
@@ -43,8 +45,17 @@ private:
     double max_line_gap_m_{0.15};
     double inlier_tol_m_{0.10};
     double publish_rate_hz_{10.0};
+    // 후보 선별 필터 (lidar 원점 ↔ 직선 수직거리 기준)
+    double min_distance_m_{0.0};   // 근거리 배제 (선반 제거용)
+    double max_distance_m_{1e6};   // 원거리 노이즈 배제
+    int    publish_top_n_{4};      // 시각화용 상위 N개 벽 (composite score 내림차순)
+    double marker_line_width_m_{0.10};
+    // 중복 선분 merge 임계 (Codex 권고 — 3°, 0.2m)
+    double merge_angle_tol_deg_{3.0};
+    double merge_distance_tol_m_{0.2};
     std::string scan_topic_{"scan"};
     std::string output_topic_{"wall_detector/longest_wall"};
+    std::string marker_topic_{"wall_detector/wall_markers"};
 
     // 콜백
     void scan_callback(sensor_msgs::msg::LaserScan::SharedPtr msg);
